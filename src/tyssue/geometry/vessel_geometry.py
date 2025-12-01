@@ -20,39 +20,41 @@ class VesselGeometry(SheetGeometry):
         sheet.get_opposite()
 
         # Identify boundary edges
-        boundary_edges = sheet.edge_df['opposite'] == -1
+
+    # Boolean mask for boundary edges
+        boundary_edges = sheet.edge_df['opposite'].eq(-1)
         sheet.edge_df.loc[boundary_edges, 'boundary'] = 1
 
         # Set boundary vertices
-        boundary_verts = sheet.edge_df.loc[boundary_edges, 'trgt']
-        sheet.vert_df.loc[boundary_verts.unique(), 'boundary'] = 1
+        boundary_verts = sheet.edge_df.loc[boundary_edges, 'trgt'].unique()
+        sheet.vert_df.loc[boundary_verts, 'boundary'] = 1
 
         # Set boundary faces
         boundary_faces = sheet.edge_df.loc[boundary_edges, 'face']
         sheet.face_df.loc[boundary_faces.dropna().unique().astype(int), 'boundary'] = 1
 
     @staticmethod
-    def update_tangents(sheet): 
-        
-        vert_coords = sheet.vert_df[sheet.coords]
-        vert_coords.loc[:, "z"] = 0
-        vert_coords = vert_coords.values 
-        normal = np.column_stack((np.zeros(sheet.Nv), np.zeros(sheet.Nv), np.ones(sheet.Nv)))
-        
-        tangent = np.cross(vert_coords, normal)
-        tangent = pd.DataFrame(tangent)
-        
-        tangent.columns = ["t" + u for u in sheet.coords]
-        
-        
-        length = pd.DataFrame(tangent.eval("sqrt(tx**2 + ty**2 +tz**2)"), columns = ['length'])
-        tangent["length"] = length["length"]
-        
-        
-        tangent = tangent[['tx','ty','tz']].div(length.length, axis=0)
-        
-        for u in sheet.coords:
-            sheet.vert_df["t" + u] = tangent["t" + u]
+    def update_tangents(sheet):
+        # Extract xy coordinates as numpy array, in current index order
+        verts = sheet.vert_df[sheet.coords].to_numpy(copy=False)
+
+        # Build xyz vectors with z = 0
+        vert_coords = np.column_stack((verts, np.zeros(len(verts))))
+
+        # Tangent = cross((x,y,0), (0,0,1)) = (y, -x, 0)
+        tangent = np.empty_like(vert_coords)
+        tangent[:, 0] = vert_coords[:, 1]  # tx =  y
+        tangent[:, 1] = -vert_coords[:, 0]  # ty = -x
+        tangent[:, 2] = 0  # tz =  0
+
+        # Normalize
+        lengths = np.linalg.norm(tangent, axis=1)
+        tangent /= lengths[:, None]
+
+        # Assign back to vert_df (pandas aligns on index)
+        sheet.vert_df["tx"] = tangent[:, 0]
+        sheet.vert_df["ty"] = tangent[:, 1]
+        sheet.vert_df["tz"] = tangent[:, 2]
 
     @classmethod
     def update_all(cls, sheet):
