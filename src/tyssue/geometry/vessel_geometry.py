@@ -54,11 +54,19 @@ class VesselGeometry(SheetGeometry):
         for u in sheet.coords:
             sheet.vert_df["t" + u] = tangent["t" + u]
 
+    @staticmethod
+    def update_vert_distance(sheet):
+        distances = np.sqrt(sheet.vert_df['x'].to_numpy()**2 + sheet.vert_df['y'].to_numpy()**2)
+        sheet.vert_df['distance_origin'] = distances
+        sheet.vert_df["ox"] = sheet.vert_df["x"]/distances
+        sheet.vert_df["oy"] = sheet.vert_df["y"]/distances
+
     @classmethod
     def update_all(cls, sheet):
         super().update_all(sheet)
         cls.update_tangents(sheet)
-        cls.update_boundary_index(sheet)         
+        cls.update_boundary_index(sheet)
+        cls.update_vert_distance(sheet)
 
 def face_svd_(faces):
 
