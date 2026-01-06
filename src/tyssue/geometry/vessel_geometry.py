@@ -32,33 +32,41 @@ class VesselGeometry(SheetGeometry):
         sheet.face_df.loc[boundary_faces.dropna().unique().astype(int), 'boundary'] = 1
 
     @staticmethod
-    def update_tangents(sheet): 
-        
+    def update_tangents(sheet):
+
         vert_coords = sheet.vert_df[sheet.coords]
         vert_coords.loc[:, "z"] = 0
-        vert_coords = vert_coords.values 
+        vert_coords = vert_coords.values
         normal = np.column_stack((np.zeros(sheet.Nv), np.zeros(sheet.Nv), np.ones(sheet.Nv)))
-        
+
         tangent = np.cross(vert_coords, normal)
         tangent = pd.DataFrame(tangent)
-        
+
         tangent.columns = ["t" + u for u in sheet.coords]
-        
-        
+
+
         length = pd.DataFrame(tangent.eval("sqrt(tx**2 + ty**2 +tz**2)"), columns = ['length'])
         tangent["length"] = length["length"]
-        
-        
+
+
         tangent = tangent[['tx','ty','tz']].div(length.length, axis=0)
-        
+
         for u in sheet.coords:
             sheet.vert_df["t" + u] = tangent["t" + u]
+
+    @staticmethod
+    def update_vert_distance(sheet):
+        distances = np.sqrt(sheet.vert_df['x'].to_numpy()**2 + sheet.vert_df['y'].to_numpy()**2)
+        sheet.vert_df['distance_origin'] = distances
+        sheet.vert_df["ox"] = sheet.vert_df["x"]/distances
+        sheet.vert_df["oy"] = sheet.vert_df["y"]/distances
 
     @classmethod
     def update_all(cls, sheet):
         super().update_all(sheet)
         cls.update_tangents(sheet)
-        cls.update_boundary_index(sheet)         
+        cls.update_boundary_index(sheet)
+        cls.update_vert_distance(sheet)
 
 def face_svd_(faces):
 

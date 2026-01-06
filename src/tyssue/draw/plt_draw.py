@@ -129,7 +129,7 @@ def create_gif(
         plt.close(fig)
 
     try:
-        subprocess.run(["convert", (graph_dir / "movie_*.png").as_posix(), output])
+        subprocess.run(["magick", (graph_dir / "movie_*.png").as_posix(), output])
     except Exception as e:
         print(
             "Converting didn't work, make sure imagemagick is available on your system"

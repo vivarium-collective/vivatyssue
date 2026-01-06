@@ -534,11 +534,6 @@ class BorderElasticity(AbstractEffector):
 
 
 class LumenAreaElasticity(AbstractEffector):
-    """
-
-    ..math: \frac{K_Y}{2}(A_{\mathrm{lumen}} - A_{0,\mathrm{lumen}})^2
-
-    """
 
     dimensions = units.area_elasticity
     label = "Lumen volume constraint"
@@ -695,7 +690,10 @@ class SurfaceElasticity(AbstractEffector):
 
         return grad, None
 
-class BoundaryElasticity(AbstractEffector):
+class VesselSurfaceElasticity(AbstractEffector):
+    """
+    Applies an elastic force to maintain vertex distance from xy origin
+    """
 
     dimensions = units.line_elasticity
     magnitude = "surface_elasticity"
@@ -708,17 +706,20 @@ class BoundaryElasticity(AbstractEffector):
     @staticmethod
     def energy(eptm):
         return elastic_energy(
-            eptm.vert_df, "bound_rad", "boundary_elasticity * is_alive", "prefered_radius"
+            eptm.vert_df, "distance_origin", "vessel_elasticity * is_alive", "prefered_radius"
         )
 
+    @staticmethod
     def gradient(eptm):
         ka_a0_ = elastic_force(
-            eptm.vert_df, "bound_rad", "boundary_elasticity * is_alive", "prefered_radius"
+            eptm.vert_df, "distance_origin", "vessel_elasticity * is_alive", "prefered_radius"
         )
 
         ka_a0 = to_nd(ka_a0_, len(eptm.coords))
 
-        grad = eptm.vert_df[["d" + x for x in eptm.coords]].to_numpy()
+        grad = eptm.vert_df[["o" + x for x in ["x", "y"]]].copy()
+        grad["oz"] = 0
+        grad = grad.to_numpy()
 
         grad = pd.DataFrame(grad * ka_a0)
 

@@ -4,7 +4,6 @@ from ..utils.utils import to_nd
 
 
 class BaseGeometry:
-    """ """
 
     @staticmethod
     def update_all(sheet):
