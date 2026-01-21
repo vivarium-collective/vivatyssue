@@ -663,7 +663,11 @@ class Epithelium:
             for c in coords:
                 self.edge_df["s" + c] = self.upcast_srce(self.vert_df[c])
 
-        polys = self.edge_df.groupby("face").apply(lambda df: df[scoords].to_numpy())
+        polys = (
+            self.edge_df
+            .groupby("face", include_groups=False)
+            .apply(lambda df: df[scoords].to_numpy())
+        )
         return polys
 
     def validate(self):
