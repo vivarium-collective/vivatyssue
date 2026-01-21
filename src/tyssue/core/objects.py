@@ -664,9 +664,9 @@ class Epithelium:
                 self.edge_df["s" + c] = self.upcast_srce(self.vert_df[c])
 
         polys = (
-            self.edge_df
-            .groupby("face", include_groups=False)
-            .apply(lambda df: df[scoords].to_numpy())
+            self.edge_df[scoords + ["face"]]
+            .groupby("face")[scoords]
+            .apply(lambda df: df.to_numpy())
         )
         return polys
 
