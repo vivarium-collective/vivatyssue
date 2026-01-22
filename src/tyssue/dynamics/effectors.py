@@ -635,26 +635,14 @@ class ChiralTorque(AbstractEffector):
     def gradient(eptm):
         torque = eptm.face_df['torque_coef']
         torque = to_nd(eptm.upcast_face(torque), len(eptm.coords))
-
         grad_srce = np.multiply(eptm.edge_df[["r" + z for z in eptm.coords]].values, torque)
-
         normal = eptm.edge_df[["n" + u for u in eptm.coords]].values
-
-
         grad_srce = np.cross(grad_srce, normal)
-
         srce_active = eptm.upcast_srce(eptm.vert_df['is_active'])
-
         grad_srce = grad_srce * \
             to_nd(srce_active, len(eptm.coords)) #* srce_bound_coords
-
         grad_srce = pd.DataFrame(grad_srce)
-
         grad_srce.columns = ["g" + u for u in eptm.coords]
-
-        # boundary = eptm.upcast_srce(eptm.vert_df['boundary'])
-
-        # grad_srce.loc[boundary == 1] = 0
 
         return grad_srce, None
 
