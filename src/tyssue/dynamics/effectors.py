@@ -14,9 +14,17 @@ from .bulk_gradients import volume_grad, lumen_volume_grad
 
 
 def elastic_force(element_df, var, elasticity, prefered):
-    params = {"x": var, "K": elasticity, "x0": prefered}
-    force = element_df.eval("{K} * ({x} - {x0})".format(**params))
-    return force
+    """
+    K can be:
+      - column name (str)
+      - callable: f(df) -> array
+    """
+    if callable(elasticity):
+        K_val = elasticity(element_df)
+    else:
+        K_val = element_df[elasticity]
+
+    return K_val * (element_df[var] - element_df[prefered])
 
 
 def _elastic_force(element_df, x, elasticity, prefered):
@@ -25,8 +33,20 @@ def _elastic_force(element_df, x, elasticity, prefered):
 
 
 def elastic_energy(element_df, var, elasticity, prefered):
-    params = {"x": var, "K": elasticity, "x0": prefered}
-    energy = element_df.eval("0.5 * {K} * ({x} - {x0}) ** 2".format(**params))
+    """
+    elasticity can be:
+      - str: column name
+      - callable: f(df) -> array-like
+    """
+    x = element_df[var]
+    x0 = element_df[prefered]
+
+    if callable(elasticity):
+        K = elasticity(element_df)
+    else:
+        K = element_df[elasticity]
+
+    energy = 0.5 * K * (x - x0) ** 2
     return energy
 
 
@@ -105,13 +125,13 @@ class LengthElasticity(AbstractEffector):
     @staticmethod
     def energy(eptm):
         return elastic_energy(
-            eptm.edge_df, "length", "length_elasticity * is_active", "prefered_length"
+            eptm.edge_df, "length", lambda df: df["length_elasticity"] * df["is_alive"], "prefered_length"
         )
 
     @staticmethod
     def gradient(eptm):
         kl_l0 = elastic_force(
-            eptm.edge_df, "length", "length_elasticity * is_active", "prefered_length"
+            eptm.edge_df, "length", lambda df: df["length_elasticity"] * df["is_alive"], "prefered_length"
         )
         grad = eptm.edge_df[eptm.ucoords] * to_nd(kl_l0, eptm.dim)
         grad.columns = ["g" + u for u in eptm.coords]
@@ -139,22 +159,27 @@ class PerimeterElasticity(AbstractEffector):
 
     @staticmethod
     def energy(eptm):
-        return eptm.face_df.eval(
-            "0.5 * is_alive"
-            "* perimeter_elasticity"
-            "* (perimeter - prefered_perimeter)** 2"
-        )
+        df = eptm.face_df
+        diff = df["perimeter"] - df["prefered_perimeter"]
+        return 0.5 * df["is_alive"] * df["perimeter_elasticity"] * diff * diff
 
     @staticmethod
     def gradient(eptm):
+        # Compute gamma directly
+        df = eptm.face_df
+        gamma_ = df["perimeter_elasticity"] * df["is_alive"] * (df["perimeter"] - df["prefered_perimeter"])
 
-        gamma_ = eptm.face_df.eval(
-            "perimeter_elasticity * is_alive" "*  (perimeter - prefered_perimeter)"
-        )
+        # Upcast gamma
         gamma = eptm.upcast_face(gamma_)
 
-        grad_srce = -eptm.edge_df[eptm.ucoords] * to_nd(gamma, len(eptm.coords))
-        grad_srce.columns = ["g" + u for u in eptm.coords]
+        # Convert gamma to node-level array
+        gamma_nd = to_nd(gamma, len(eptm.coords))
+
+        # Compute gradient at edges
+        grad_srce = -eptm.edge_df[eptm.ucoords].to_numpy() * gamma_nd
+        grad_srce = pd.DataFrame(grad_srce, columns=["g" + u for u in eptm.coords])
+
+        # grad_trgt is just the negative
         grad_trgt = -grad_srce
         return grad_srce, grad_trgt
 
@@ -185,13 +210,13 @@ class FaceAreaElasticity(AbstractEffector):
     @staticmethod
     def energy(eptm):
         return elastic_energy(
-            eptm.face_df, "area", "area_elasticity * is_alive", "prefered_area"
+            eptm.face_df, "area", lambda df: df["area_elasticity"] * df["is_alive"], "prefered_area"
         )
 
     @staticmethod
     def gradient(eptm):
         ka_a0_ = elastic_force(
-            eptm.face_df, "area", "area_elasticity * is_alive", "prefered_area"
+            eptm.face_df, "area", lambda df: df["area_elasticity"] * df["is_alive"], "prefered_area"
         )
         ka_a0 = to_nd(eptm.upcast_face(ka_a0_), len(eptm.coords))
 
@@ -230,13 +255,13 @@ class FaceVolumeElasticity(AbstractEffector):
     @staticmethod
     def energy(eptm):
         return elastic_energy(
-            eptm.face_df, "vol", "vol_elasticity * is_alive", "prefered_vol"
+            eptm.face_df, "vol", lambda df: df["vol_elasticity"] * df["is_alive"], "prefered_vol"
         )
 
     @staticmethod
     def gradient(eptm):
         kv_v0_ = elastic_force(
-            eptm.face_df, "vol", "vol_elasticity * is_alive", "prefered_vol"
+            eptm.face_df, "vol", lambda df: df["vol_elasticity"] * df["is_alive"], "prefered_vol"
         )
 
         kv_v0 = to_nd(eptm.upcast_face(kv_v0_), 3)
@@ -283,7 +308,7 @@ class CellAreaElasticity(AbstractEffector):
     @staticmethod
     def gradient(eptm):
         ka_a0_ = elastic_force(
-            eptm.cell_df, "area", "area_elasticity * is_alive", "prefered_area"
+            eptm.cell_df, "area", lambda df: df["area_elasticity"] * df["is_alive"], "prefered_area"
         )
 
         ka_a0 = to_nd(eptm.upcast_cell(ka_a0_), 3)
@@ -321,7 +346,7 @@ class CellVolumeElasticity(AbstractEffector):
     @staticmethod
     def gradient(eptm):
         kv_v0_ = elastic_force(
-            eptm.cell_df, "vol", "vol_elasticity * is_alive", "prefered_vol"
+            eptm.cell_df, "vol", lambda df: df["vol_elasticity"] * df["is_alive"], "prefered_vol"
         )
 
         kv_v0 = to_nd(eptm.upcast_cell(kv_v0_), 3)
@@ -397,15 +422,19 @@ class LineTension(AbstractEffector):
 
     @staticmethod
     def energy(eptm):
-        return eptm.edge_df.eval(
-            "line_tension" "* is_active" "* length / 2"
-        )  # accounts for half edges
+        df = eptm.edge_df
+        return 0.5 * df["line_tension"] * df["is_active"] * df["length"]  # accounts for half edges
 
     @staticmethod
     def gradient(eptm):
-        grad_srce = -eptm.edge_df[eptm.ucoords] * to_nd(
-            eptm.edge_df.eval("line_tension * is_active/2"), len(eptm.coords)
+        edge_df = eptm.edge_df
+
+        coeff = (edge_df["line_tension"] * edge_df["is_active"]) * 0.5
+
+        grad_srce = -edge_df[eptm.ucoords] * to_nd(
+            coeff, len(eptm.coords)
         )
+
         grad_srce.columns = ["g" + u for u in eptm.coords]
         grad_trgt = -grad_srce
         return grad_srce, grad_trgt
@@ -423,16 +452,26 @@ class FaceContractility(AbstractEffector):
 
     @staticmethod
     def energy(eptm):
-        return eptm.face_df.eval("0.5 * is_alive * contractility * perimeter ** 2")
+        df = eptm.face_df
+        return 0.5 * df["is_alive"] * df["contractility"] * df["perimeter"] * df["perimeter"]
 
     @staticmethod
     def gradient(eptm):
+        # Compute gamma directly
+        df = eptm.face_df
+        gamma_ = df["contractility"] * df["perimeter"] * df["is_alive"]
 
-        gamma_ = eptm.face_df.eval("contractility * perimeter * is_alive")
+        # Upcast gamma to edges
         gamma = eptm.upcast_face(gamma_)
 
-        grad_srce = -eptm.edge_df[eptm.ucoords] * to_nd(gamma, len(eptm.coords))
-        grad_srce.columns = ["g" + u for u in eptm.coords]
+        # Convert gamma to node-level array
+        gamma_nd = to_nd(gamma, len(eptm.coords))
+
+        # Compute gradient at edges
+        grad_srce = -eptm.edge_df[eptm.ucoords].to_numpy() * gamma_nd
+        grad_srce = pd.DataFrame(grad_srce, columns=["g" + u for u in eptm.coords])
+
+        # grad_trgt is just the negative
         grad_trgt = -grad_srce
         return grad_srce, grad_trgt
 
@@ -450,8 +489,8 @@ class SurfaceTension(AbstractEffector):
 
     @staticmethod
     def energy(eptm):
-
-        return eptm.face_df.eval("surface_tension * area")
+        df = eptm.face_df
+        return df["surface_tension"] * df["area"]
 
     @staticmethod
     def gradient(eptm):
@@ -515,7 +554,7 @@ class BorderElasticity(AbstractEffector):
         return elastic_energy(
             eptm.edge_df,
             "length",
-            "border_elasticity * is_active * is_border / 2",
+            lambda df: df["border_elasticity"] * df["is_active"] * df["is_border"]/2,
             "prefered_length",
         )
 
@@ -525,7 +564,7 @@ class BorderElasticity(AbstractEffector):
         kl_l0 = elastic_force(
             eptm.edge_df,
             var="length",
-            elasticity="border_elasticity * is_active * is_border",
+            elasticity= lambda df: df["border_elasticity"] * df["is_active"] * df["is_border"],
             prefered="prefered_length",
         )
         grad = eptm.edge_df[eptm.ucoords] * to_nd(kl_l0, eptm.dim)
@@ -578,12 +617,13 @@ class RadialTension(AbstractEffector):
 
     @staticmethod
     def energy(eptm):
-        return eptm.face_df.eval("height * radial_tension")
+        df = eptm.face_df
+        return df["height"] * df["radial_tension"]
 
     @staticmethod
     def gradient(eptm):
         upcast_tension = eptm.upcast_face(
-            eptm.face_df.eval("radial_tension / num_sides")
+            eptm.face_df["radial_tension"] / eptm.face_df["num_sides"]
         )
 
         upcast_height = eptm.upcast_srce(height_grad(eptm))
@@ -607,15 +647,24 @@ class BarrierElasticity(AbstractEffector):
 
     @staticmethod
     def energy(eptm):
-        return eptm.vert_df.eval("delta_rho**2 * barrier_elasticity/2")
+        df = eptm.vert_df
+        return 0.5 * df["barrier_elasticity"] * df["delta_rho"] * df["delta_rho"]
 
     @staticmethod
     def gradient(eptm):
-        grad = height_grad(eptm) * to_nd(
-            eptm.vert_df.eval("barrier_elasticity * delta_rho"), 3
-        )
+        # Compute the vertex-level factor
+        df = eptm.vert_df
+        factor = df["barrier_elasticity"] * df["delta_rho"]
+
+        # Convert to node-level array
+        factor_nd = to_nd(factor, 3)
+
+        # Compute gradient
+        grad = height_grad(eptm) * factor_nd
         grad.columns = ["g" + c for c in eptm.coords]
+
         return grad, None
+
 
 class ChiralTorque(AbstractEffector):
 
@@ -646,6 +695,78 @@ class ChiralTorque(AbstractEffector):
 
         return grad_srce, None
 
+
+class ActiveMigration(AbstractEffector):
+    """Active cell migration force along a specified direction.
+
+    This is a non-conservative force that drives cells to migrate
+    along a specified vector direction with constant magnitude.
+    """
+
+    dimensions = units.force  # or appropriate force units
+    magnitude = "migration_strength"
+    label = "Active Migration"
+    element = "face"
+    specs = {
+        "face": {
+            "is_alive": 1,
+            "migration_strength": 0.1,  # magnitude of migration force
+            "migration_dir_x": 1.0,  # x-component of migration direction
+            "migration_dir_y": 0.0,  # y-component of migration direction
+            "migration_dir_z": 0.0,  # z-component (if 3D)
+        }
+    }
+
+    spatial_ref = "migration_strength", units.force
+
+    @staticmethod
+    def energy(eptm):
+        """Non-conservative force - return zero energy."""
+        return np.zeros(eptm.Nv)
+
+    @staticmethod
+    def gradient(eptm):
+        """Compute migration forces on vertices.
+
+        Each cell exerts a constant force in its migration direction,
+        distributed among its vertices.
+        """
+        df = eptm.face_df
+
+        # Get migration force vector for each face
+        # Force magnitude scaled by migration_strength and is_alive
+        force_magnitude = df["migration_strength"] * df["is_alive"]
+
+        # Build force vector (normalize direction first)
+        migration_dirs = df[[f"m{c}" for c in eptm.coords]].to_numpy()
+
+        # Normalize direction vectors (per face)
+        norms = np.linalg.norm(migration_dirs, axis=1, keepdims=True)
+        norms = np.where(norms > 0, norms, 1.0)  # avoid division by zero
+        migration_dirs_normalized = migration_dirs / norms
+
+        # Scale by force magnitude
+        force_vectors = migration_dirs_normalized * force_magnitude.to_numpy()[:, np.newaxis]
+
+        # Upcast from face to edge level
+        force_per_coord = {
+            coord: eptm.upcast_face(force_vectors[:, i])
+            for i, coord in enumerate(eptm.coords)
+        }
+
+        # Convert to node-level arrays
+        force_nd = np.column_stack([
+            to_nd(force_per_coord[coord], len(eptm.coords))
+            for coord in eptm.coords
+        ])
+
+        # Distribute force equally to source vertices
+        # (could also distribute based on edge length or other schemes)
+        grad_srce = pd.DataFrame(force_nd, columns=["g" + u for u in eptm.coords])
+
+        return grad_srce, None
+
+
 class SurfaceElasticity(AbstractEffector):
 
     dimensions = units.line_elasticity
@@ -659,13 +780,13 @@ class SurfaceElasticity(AbstractEffector):
     @staticmethod
     def energy(eptm):
         return elastic_energy(
-            eptm.vert_df, "dev_length", "surface_elasticity * is_active", "prefered_deviation"
+            eptm.vert_df, "dev_length", lambda df: df["surface_elasticity"] * df["is_active"], "prefered_deviation"
         )
 
     @staticmethod
     def gradient(eptm):
         ka_a0_ = elastic_force(
-            eptm.vert_df, "dev_length", "surface_elasticity * is_active", "prefered_deviation"
+            eptm.vert_df, "dev_length", lambda df: df["surface_elasticity"] * df["is_active"], "prefered_deviation"
         )
 
         ka_a0 = to_nd(ka_a0_, len(eptm.coords))
@@ -694,13 +815,13 @@ class VesselSurfaceElasticity(AbstractEffector):
     @staticmethod
     def energy(eptm):
         return elastic_energy(
-            eptm.vert_df, "distance_origin", "vessel_elasticity * is_alive", "prefered_radius"
+            eptm.vert_df, "distance_origin", lambda df: df["vessel_elasticity"] * df["is_alive"], "prefered_radius"
         )
 
     @staticmethod
     def gradient(eptm):
         ka_a0_ = elastic_force(
-            eptm.vert_df, "distance_origin", "vessel_elasticity * is_alive", "prefered_radius"
+            eptm.vert_df, "distance_origin", lambda df: df["vessel_elasticity"] * df["is_alive"], "prefered_radius"
         )
 
         ka_a0 = to_nd(ka_a0_, len(eptm.coords))
