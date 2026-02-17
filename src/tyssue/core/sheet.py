@@ -468,28 +468,39 @@ class Sheet(Epithelium):
 
 
 def get_opposite(edge_df, raise_if_invalid=False):
-    """
-    Returns the indices opposite to the edges in `edge_df`
-    """
+    srce = edge_df["srce"].to_numpy()
+    trgt = edge_df["trgt"].to_numpy()
+    edge_idx = edge_df.index.to_numpy()
 
-    st_indexed = (
-        edge_df[["srce", "trgt"]].reset_index().set_index(["srce", "trgt"], drop=False)
-    )
-    flipped = st_indexed.index.swaplevel(0, 1)
-    flipped.names = ["srce", "trgt"]
-    try:
-        opposite = st_indexed.reindex(flipped)["edge"].values
-    except ValueError as e:
-        dup = flipped.duplicated()
-        warnings.warn(
-            "Duplicated (`srce`, `trgt`) values in edge_df, maybe sanitize your input"
-        )
-        opposite = st_indexed[~dup].reindex(flipped)["edge"].values
+    pairs = np.zeros(len(srce), dtype=[('f0', srce.dtype), ('f1', trgt.dtype)])
+    pairs['f0'], pairs['f1'] = srce, trgt
+
+    sort_idx = np.argsort(pairs)
+    sorted_pairs = pairs[sort_idx]
+
+    if np.any(sorted_pairs[1:] == sorted_pairs[:-1]):
+        warnings.warn("Duplicated (`srce`, `trgt`) values detected.")
         if raise_if_invalid:
-            raise e
+            raise ValueError("Duplicated pairs detected")
 
-    opposite[np.isnan(opposite)] = -1
-    return opposite.astype(int)
+    # Find opposites
+    # Create the "target" pairs we are looking for: (trgt, srce)
+    flipped_pairs = np.zeros(len(srce), dtype=[('f0', srce.dtype), ('f1', trgt.dtype)])
+    flipped_pairs['f0'], flipped_pairs['f1'] = trgt, srce
+
+    # Find where flipped_pairs would fit into the sorted list of original pairs
+    match_indices = np.searchsorted(sorted_pairs, flipped_pairs)
+
+
+    valid_mask = (match_indices < len(pairs))
+    actual_match_mask = valid_mask.copy()
+    actual_match_mask[valid_mask] = (sorted_pairs[match_indices[valid_mask]] == flipped_pairs[valid_mask])
+
+    # Map back from the sorted index to the original edge index
+    opposite = np.full(len(srce), -1, dtype=edge_idx.dtype)
+    opposite[actual_match_mask] = edge_idx[sort_idx[match_indices[actual_match_mask]]]
+
+    return opposite
 
 
 def get_outer_sheet(eptm):

@@ -129,15 +129,26 @@ class SheetGeometry(PlanarGeometry):
         sheet.face_df[["height", "rho"]] = edge_height.mean(level="face")
 
     @staticmethod
-    def update_boundary_index(eptm):
+    def update_boundary_index(sheet):
+    # Reset boundary flags
+        sheet.vert_df['boundary'] = 0
+        sheet.edge_df['boundary'] = 0
+        sheet.face_df['boundary'] = 0
 
-        eptm.vert_df['boundary'] = 0
+        # Update opposite edges
+        sheet.get_opposite()
 
-        eptm.get_opposite()
+        # Identify boundary edges
+        boundary_edges = sheet.edge_df['opposite'] == -1
+        sheet.edge_df.loc[boundary_edges, 'boundary'] = 1
 
-        boundary_verts = eptm.edge_df.loc[eptm.edge_df['opposite'] == -1, 'trgt'].to_numpy()
+        # Set boundary vertices
+        boundary_verts = sheet.edge_df.loc[boundary_edges, 'trgt']
+        sheet.vert_df.loc[boundary_verts.unique(), 'boundary'] = 1
 
-        eptm.vert_df.loc[boundary_verts, "boundary"] = 1
+        # Set boundary faces
+        boundary_faces = sheet.edge_df.loc[boundary_edges, 'face']
+        sheet.face_df.loc[boundary_faces.dropna().unique().astype(int), 'boundary'] = 1
 
     @classmethod
     def reset_scafold(cls, sheet):

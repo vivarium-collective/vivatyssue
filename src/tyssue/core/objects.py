@@ -681,7 +681,7 @@ class Epithelium:
         """Set the 'is_valid' column to true if the faces are all closed polygons,
         and the cells closed polyhedra.
         """
-        is_valid_face = self.edge_df.groupby("face").apply(_test_valid)
+        is_valid_face = self.edge_df.groupby("face").apply(_test_valid, include_groups=True)
         is_valid = self.upcast_face(is_valid_face)
         if "cell" in self.data_names:
             is_valid_cell = self.edge_df.groupby("cell").apply(_is_closed_cell)

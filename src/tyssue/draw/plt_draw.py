@@ -261,6 +261,74 @@ according to the normalization used. Default 0 to 1 range is used.
             cb1.set_label(axis_spec.get("color_bar_label"))
         return fig, ax
 
+def draw_faces_highlighted(
+    sheet,
+    face_indices,
+    highlight_color,
+    coords=COORDS,
+    ax=None,
+    alpha=1.0,
+    background_color=(1.0, 1.0, 1.0, 1.0),
+    show_edges=True,
+):
+    """
+    Draw full tissue, highlighting selected faces in a given color
+    and rendering all others in white.
+
+    Parameters
+    ----------
+    sheet : Sheet
+    face_indices : array-like
+        Indices of faces to highlight
+    highlight_color : color-like
+        Matplotlib color (e.g. "#ff0000", "red", RGBA)
+    coords : tuple
+    ax : matplotlib axis, optional
+    alpha : float
+    background_color : RGBA tuple
+    show_edges : bool
+    """
+
+    from matplotlib.colors import to_rgba
+
+    # Convert highlight color to RGBA
+    hi_rgba = np.array(to_rgba(highlight_color))
+    bg_rgba = np.array(background_color)
+
+    # Build per-face RGBA array
+    face_colors = np.tile(bg_rgba, (sheet.Nf, 1))
+
+    face_idx = sheet.face_df.index
+    mask = face_idx.isin(face_indices)
+
+    face_colors[mask.values] = hi_rgba
+    face_colors[:, 3] *= alpha  # apply alpha uniformly
+
+    draw_specs = {
+        "face": {
+            "visible": True,
+            "color": face_colors,
+        },
+        "edge": {
+            "visible": show_edges,
+        },
+        "vert": {
+            "visible": False,
+        },
+        "axis": {
+            "autoscale": True,
+            "color_bar": False,
+        },
+    }
+
+    fig, ax = sheet_view(
+        sheet,
+        coords=coords,
+        ax=ax,
+        **draw_specs,
+    )
+
+    return fig, ax
 
 def draw_face(sheet, coords, ax, **draw_spec_kw):
     """Draws epithelial sheet polygonal faces in matplotlib
