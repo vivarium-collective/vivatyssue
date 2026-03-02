@@ -764,7 +764,7 @@ class ActiveMigration(AbstractEffector):
         # (could also distribute based on edge length or other schemes)
         grad_srce = pd.DataFrame(force_nd, columns=["g" + u for u in eptm.coords])
 
-        return grad_srce, None
+        return -grad_srce, None
 
 
 class SurfaceElasticity(AbstractEffector):

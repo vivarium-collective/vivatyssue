@@ -75,6 +75,7 @@ def create_gif(
     interval=None,
     draw_func=None,
     margin=5,
+    dpi=200,
     **draw_kwds,
 ):
     """Creates an animated gif of the recorded history.
@@ -118,6 +119,7 @@ def create_gif(
     for i, (t, sheet) in enumerate(history.browse(start, stop, num_frames)):
         try:
             fig, ax = draw_func(sheet, **draw_kwds)
+            plt.title(f"t = {t:.2f}")
         except Exception as e:
             print(f"Droped frame {i}")
             print(e)
@@ -125,7 +127,11 @@ def create_gif(
 
         if isinstance(ax, plt.Axes) and margin >= 0:
             ax.set(xlim=xlim, ylim=ylim)
-        fig.savefig(graph_dir / f"movie_{i:04d}.png")
+        fig.savefig(
+            graph_dir / f"movie_{i:04d}.png",
+            dpi = dpi,
+            bbox_inches="tight",
+        )
         plt.close(fig)
 
     try:
@@ -138,7 +144,6 @@ def create_gif(
 
     finally:
         shutil.rmtree(graph_dir)
-
 
 def sheet_view(sheet, coords=COORDS, ax=None, cbar_axis=None, **draw_specs_kw):
     """Base view function, parametrizable
@@ -301,7 +306,7 @@ def draw_faces_highlighted(
     face_idx = sheet.face_df.index
     mask = face_idx.isin(face_indices)
 
-    face_colors[mask.values] = hi_rgba
+    face_colors[mask] = hi_rgba
     face_colors[:, 3] *= alpha  # apply alpha uniformly
 
     draw_specs = {
