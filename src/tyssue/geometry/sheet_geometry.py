@@ -219,8 +219,10 @@ class SheetGeometry(PlanarGeometry):
         """
 
         face_orbit = sheet.edge_df[sheet.edge_df["face"] == face]["srce"]
-        rel_pos = (sheet.vert_df.loc[face_orbit.to_numpy(), sheet.coords].to_numpy() - sheet.face_df.loc[
-            face, sheet.coords].to_numpy())
+        rel_pos = (
+                sheet.vert_df.loc[face_orbit.to_numpy(), sheet.coords].to_numpy()
+                - sheet.face_df.loc[face, sheet.coords].to_numpy(dtype=float)
+        )
         _, _, rotation = np.linalg.svd(
             rel_pos, full_matrices=False)
         if psi:
