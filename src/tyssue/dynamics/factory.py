@@ -240,16 +240,15 @@ Setting all default values to 1.0 for now
 
             grad_i = sum([g for g in (grad_s, grad_t, grad_v) if g is not None])
 
-            grad_i.loc[(eptm.vert_df["boundary"]==1) & (eptm.vert_df["z"] < 0), ["gx", "gy", "gz"]] = 0
-            grad_i.loc[(eptm.vert_df["boundary"] == 1) & (eptm.vert_df["z"] > 0), ["gx", "gy"]] = 0
+            grad_i.loc[(eptm.vert_df["boundary"]==1) & (eptm.vert_df["z"] < 1), "gz"] = 0
 
-            g = grad_i[["gx", "gy", "gz"]].values
-            n = eptm.vert_df[["x", "y", "z"]].values
-            n_norm = np.linalg.norm(n, axis=1, keepdims=True)
-            n_hat = n/n_norm
-            dot_product = (g * n_hat).sum(axis=1, keepdims=True)
-            g_proj_plane = g - dot_product * n_hat
-            grad_i = pd.DataFrame(g_proj_plane, columns=['gx', 'gy', 'gz'])
+            # g = grad_i[["gx", "gy", "gz"]].values
+            # n = eptm.vert_df[["x", "y", "z"]].values
+            # n_norm = np.linalg.norm(n, axis=1, keepdims=True)
+            # n_hat = n/n_norm
+            # dot_product = (g * n_hat).sum(axis=1, keepdims=True)
+            # g_proj_plane = g - dot_product * n_hat
+            # grad_i = pd.DataFrame(g_proj_plane, columns=['gx', 'gy', 'gz'])
 
             return grad_i / norm_factor
 

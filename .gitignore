@@ -84,3 +84,9 @@ dist/
 
 .idea/
 src/tyssue/_version.py
+
+# closure-test rendered videos
+tests/behaviors/output/
+
+# notebook-generated demo media
+notebooks/closure_demo_output/

@@ -17,13 +17,46 @@ from matplotlib import colormaps
 from matplotlib.collections import LineCollection, PatchCollection, PolyCollection
 from matplotlib.patches import Arc, FancyArrow, PathPatch
 from matplotlib.path import Path
+from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
+import matplotlib.collections as mcollections
+import matplotlib.patches as mpatches
 
 from ..config.draw import sheet_spec
 from ..utils.utils import get_sub_eptm, spec_updater
 
 COORDS = ["x", "y"]
+COORDS3D = ["x", "y", "z"]
 
 log = logging.getLogger(__name__)
+
+
+def deep_update(base, updates):
+    for key, value in updates.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            deep_update(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def patch_2d_collections_to_3d(ax):
+    """Replace any 2D LineCollections on a 3D axes with proper Line3DCollection instances."""
+    replacements = []
+    for col in ax.collections:
+        if type(col) is mcollections.LineCollection:
+            segments = col.get_segments()
+            segments_3d = [
+                seg if seg.shape[1] == 3 else np.hstack([seg, np.zeros((len(seg), 1))])
+                for seg in segments
+            ]
+            new_col = Line3DCollection(segments_3d)
+            new_col.set_color(col.get_colors())
+            new_col.set_linewidth(col.get_linewidths())
+            replacements.append((col, new_col))
+
+    for old, new in replacements:
+        old.remove()
+        ax.add_collection3d(new)
 
 
 def browse_history(
@@ -145,7 +178,117 @@ def create_gif(
     finally:
         shutil.rmtree(graph_dir)
 
-def sheet_view(sheet, coords=COORDS, ax=None, cbar_axis=None, **draw_specs_kw):
+def create_gif_3d(
+    history,
+    output,
+    num_frames=None,
+    interval=None,
+    draw_func=None,
+    margin=5,
+    dpi=200,
+    view_angle=(30, 45),
+    dynamic_draw_kwds=None,
+    legend = None,
+    cull_back_edges=False,
+    **draw_kwds,
+):
+    """Creates an animated 3D gif of the recorded history.
+
+    You need imagemagick on your system for this function to work.
+    The draw_func must accept an `ax` keyword argument and plot into
+    the provided Axes3D instance.
+
+    Parameters
+    ----------
+    history : a :class:`tyssue.History` object
+    output : path to the output gif file
+    num_frames : int, the number of frames in the gif
+    interval : tuple, define begin and end frame of the gif
+    draw_func : a drawing function
+        Must take a `sheet` object as first argument and return a
+        `fig, ax` pair. Must accept an `ax` keyword argument so it
+        can plot into the pre-created Axes3D. Defaults to sheet_view.
+    margin : int, graph margins in percent, default 5.
+        If -1, let the draw function decide.
+    dpi : int, resolution of each saved frame, default 200
+    view_angle : tuple (elev, azim), default (30, 45)
+        Elevation and azimuth angles for the 3D camera.
+    dynamic_draw_kwds : list of functions or None
+        list of functions that are called to update the draw_kds
+
+        Example::
+
+            dynamic_draw_kwds={
+                "face_colors": lambda sheet: sheet.face_df["myogen"].values,
+            }
+
+    **draw_kwds are passed unchanged to the drawing function
+    """
+    if draw_func is None:
+        draw_func = sheet_view_3d  # default to the 3D view
+
+    draw_kwds.setdefault("view_angle", view_angle)
+
+    if dynamic_draw_kwds is None:
+        dynamic_draw_kwds = []
+
+    graph_dir = pathlib.Path(tempfile.mkdtemp())
+
+    if interval is None:
+        start, stop = None, None
+    else:
+        start, stop = interval[0], interval[1]
+
+    coords = draw_kwds.get("coords", history.sheet.coords[:3])
+    x, y, z = coords[0], coords[1], coords[2]
+    sheet0 = history.retrieve(0)
+    bounds = sheet0.vert_df[coords].describe().loc[["min", "max"]]
+    delta = (bounds.loc["max"] - bounds.loc["min"]).max()
+    margin_val = delta * margin / 100
+    xlim = bounds.loc["min", x] - margin_val, bounds.loc["max", x] + margin_val
+    ylim = bounds.loc["min", y] - margin_val, bounds.loc["max", y] + margin_val
+    zlim = bounds.loc["min", z] - margin_val, bounds.loc["max", z] + margin_val
+
+    for i, (t, sheet) in enumerate(history.browse(start, stop, num_frames)):
+        try:
+            if len(dynamic_draw_kwds) > 0:
+                for func in dynamic_draw_kwds:
+                    update_kwds = func(sheet)
+                    draw_kwds = deep_update(draw_kwds, update_kwds)
+
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection="3d")
+            ax.view_init(elev=view_angle[0], azim=view_angle[1])
+
+            fig, ax = draw_func(sheet, ax=ax, legend=legend, cull_back_edges=cull_back_edges, **draw_kwds)
+            patch_2d_collections_to_3d(ax)
+            ax.set(xlim=xlim, ylim=ylim, zlim=zlim)
+            ax.set_title(f"t = {t:.2f}")
+
+        except Exception as e:
+            print(f"Dropped frame {i}")
+            print(e)
+            continue
+
+        fig.savefig(
+            graph_dir / f"movie_{i:04d}.png",
+            dpi=dpi,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+    try:
+        subprocess.run(["magick", (graph_dir / "movie_*.png").as_posix(), output])
+    except Exception as e:
+        print(
+            "Converting didn't work, make sure imagemagick is available on your system"
+        )
+        raise e
+
+    finally:
+        shutil.rmtree(graph_dir)
+
+def sheet_view(sheet, coords=COORDS, ax=None, cbar_axis=None, legend=None, **draw_specs_kw):
     """Base view function, parametrizable
     through draw_secs
     The default sheet_spec specification is:
@@ -264,7 +407,71 @@ according to the normalization used. Default 0 to 1 range is used.
             cb1.set_label("a.u.")
         else:
             cb1.set_label(axis_spec.get("color_bar_label"))
+
+        if legend is not None:
+            handles = [
+                mpatches.Patch(color=color, label=label)
+                for label, color in legend.items()
+            ]
+            ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0, 1))
+
         return fig, ax
+
+def sheet_view_3d(sheet, coords=COORDS, ax=None, view_angle=(30, 45), cull_back_edges=False, legend=None, draw_order=("face", "vert", "edge"), **draw_specs_kw):
+    """3D version of sheet_view using Axes3D.
+
+    Parameters
+    ----------
+    sheet : a tyssue Sheet object
+    coords : list of 3 coordinate names, default COORDS
+    ax : an Axes3D instance, or None to create a new one
+    view_angle : tuple (elev, azim), default (30, 45)
+    draw_order : tuple or list of {"face", "vert", "edge"}, default ("face", "vert", "edge")
+        Order in which the elements are drawn. Elements drawn later appear on
+        top. Any element omitted from this sequence is not drawn.
+    **draw_specs_kw : passed to the draw spec updater
+    """
+    draw_specs = sheet_spec()
+    spec_updater(draw_specs, draw_specs_kw)
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection="3d")
+    else:
+        fig = ax.get_figure()
+
+    ax.view_init(elev=view_angle[0], azim=view_angle[1])
+
+    valid_elements = {"face", "vert", "edge"}
+    unknown = set(draw_order) - valid_elements
+    if unknown:
+        raise ValueError(
+            f"Unknown element(s) in draw_order: {sorted(unknown)}. "
+            f"Valid elements are {sorted(valid_elements)}."
+        )
+
+    for element in draw_order:
+        spec = draw_specs[element]
+        if not spec["visible"]:
+            continue
+        if element == "face":
+            ax = draw_face_3d(sheet, coords, ax, **spec)
+        elif element == "vert":
+            ax = draw_vert_3d(sheet, coords, ax, **spec)
+        elif element == "edge":
+            ax = draw_edge_3d(sheet, coords, ax, view_angle=view_angle, cull_back_edges=cull_back_edges, **spec)
+
+    if legend is not None:
+        handles = [
+            mpatches.Patch(color=color, label=label)
+            for label, color in legend.items()
+        ]
+        ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0, 1))
+
+    ax.autoscale()
+    _set_axes_proportional_3d(ax)
+    _auto_tick_fontsize_3d(ax, base_size=8, min_size=4)
+    return fig, ax
 
 def draw_faces_highlighted(
     sheet,
@@ -368,6 +575,125 @@ def draw_face(sheet, coords, ax, **draw_spec_kw):
     return ax
 
 
+def draw_vert(sheet, coords, ax, **draw_spec_kw):
+    """Draw junction vertices in matplotlib."""
+    draw_spec = sheet_spec()["vert"]
+    draw_spec.update(**draw_spec_kw)
+
+    x, y = coords
+    if "z_coord" in sheet.vert_df.columns:
+        pos = sheet.vert_df.sort_values("z_coord")[coords]
+    else:
+        pos = sheet.vert_df[coords]
+    ax.scatter(pos[x], pos[y], **draw_spec_kw)
+    return ax
+
+
+def draw_edge(sheet, coords, ax, **draw_spec_kw):
+    """"""
+    draw_spec = sheet_spec()["edge"]
+    draw_spec.update(**draw_spec_kw)
+    arrow_specs, collections_specs = _parse_edge_specs(draw_spec, sheet)
+    dx, dy = ("d" + c for c in coords)
+    sx, sy = ("s" + c for c in coords)
+    tx, ty = ("t" + c for c in coords)
+
+    if draw_spec.get("head_width"):
+
+        app_length = (
+            np.hypot(sheet.edge_df[dx], sheet.edge_df[dy]) * sheet.edge_df.length.mean()
+        )
+        patches = [
+            FancyArrow(*edge[[sx, sy, dx, dy]], **arrow_specs)
+            for idx, edge in sheet.edge_df[app_length > 1e-6].iterrows()
+        ]
+        ax.add_collection(
+            PatchCollection(patches, match_original=False, **collections_specs)
+        )
+    else:
+        segments = sheet.edge_df[[sx, sy, tx, ty]].to_numpy().reshape((-1, 2, 2))
+        ax.add_collection(LineCollection(segments, **collections_specs))
+    return ax
+
+
+def draw_vert_3d(sheet, coords, ax, **draw_spec_kw):
+    """Draw junction vertices in 3D matplotlib."""
+    draw_spec = sheet_spec()["vert"]
+    draw_spec.update(**draw_spec_kw)
+
+    x, y, z = coords
+    if "z_coord" in sheet.vert_df.columns:
+        pos = sheet.vert_df.sort_values("z_coord")[coords]
+    else:
+        pos = sheet.vert_df[coords]
+
+    ax.scatter(pos[x], pos[y], pos[z], **draw_spec_kw)
+    ax.autoscale()
+    return ax
+
+
+def draw_edge_3d(sheet, coords, ax, view_angle=(30, 45), cull_back_edges=False, **draw_spec_kw):
+    draw_spec = sheet_spec()["edge"]
+    draw_spec.update(**draw_spec_kw)
+    _, collections_specs = _parse_edge_specs(draw_spec, sheet)
+
+    sx, sy, sz = ("s" + c for c in coords)
+    tx, ty, tz = ("t" + c for c in coords)
+
+    edge_df = sheet.edge_df
+
+    if cull_back_edges:
+        mx = (edge_df[sx] + edge_df[tx]) / 2
+        my = (edge_df[sy] + edge_df[ty]) / 2
+
+        # Only use azimuth — culling is purely in xy for a z-axis cylinder
+        azim = np.deg2rad(view_angle[1])
+        view_dir_xy = np.array([np.cos(azim), np.sin(azim)])
+
+        # Centroid in xy only
+        cx, cy = mx.mean(), my.mean()
+        outward_xy = np.stack([mx - cx, my - cy], axis=1)
+
+        dots = outward_xy @ view_dir_xy
+        edge_df = edge_df[dots > 0]
+
+    segments = (
+        edge_df[[sx, sy, sz, tx, ty, tz]]
+        .to_numpy()
+        .reshape((-1, 2, 3))
+    )
+    ax.add_collection3d(Line3DCollection(segments, **collections_specs))
+    return ax
+
+def draw_face_3d(sheet, coords, ax, **draw_spec_kw):
+    """Draw epithelial sheet polygonal faces as a Poly3DCollection."""
+    draw_spec = sheet_spec()["face"]
+    draw_spec.update(**draw_spec_kw)
+    collection_specs = parse_face_specs(draw_spec, sheet)
+
+    if "visible" in sheet.face_df.columns:
+        edges = sheet.edge_df[sheet.upcast_face(sheet.face_df["visible"])].index
+        if edges.shape[0]:
+            _sheet = get_sub_eptm(sheet, edges)
+            sheet = _sheet
+            color = collection_specs["facecolors"]
+            if isinstance(color, np.ndarray):
+                faces = sheet.face_df["face_o"].values.astype(np.uint32)
+                collection_specs["facecolors"] = color.take(faces, axis=0)
+        else:
+            warnings.warn("No face is visible")
+
+    if not sheet.is_ordered:
+        sheet_ = sheet.copy()
+        sheet_.reset_index(order=True)
+        polys = sheet_.face_polygons(coords)
+    else:
+        polys = sheet.face_polygons(coords)
+
+    p = Poly3DCollection(polys, closed=True, **collection_specs)
+    ax.add_collection3d(p)
+    return ax
+
 def parse_face_specs(face_draw_specs, sheet):
 
     collection_specs = {}
@@ -411,47 +737,6 @@ def _face_color_from_sequence(face_spec, sheet):
         raise ValueError(
             "shape of `face_spec['color']` must be either (Nf, 3), (Nf, 4) or (Nf,)"
         )
-
-
-def draw_vert(sheet, coords, ax, **draw_spec_kw):
-    """Draw junction vertices in matplotlib."""
-    draw_spec = sheet_spec()["vert"]
-    draw_spec.update(**draw_spec_kw)
-
-    x, y = coords
-    if "z_coord" in sheet.vert_df.columns:
-        pos = sheet.vert_df.sort_values("z_coord")[coords]
-    else:
-        pos = sheet.vert_df[coords]
-    ax.scatter(pos[x], pos[y], **draw_spec_kw)
-    return ax
-
-
-def draw_edge(sheet, coords, ax, **draw_spec_kw):
-    """"""
-    draw_spec = sheet_spec()["edge"]
-    draw_spec.update(**draw_spec_kw)
-    arrow_specs, collections_specs = _parse_edge_specs(draw_spec, sheet)
-    dx, dy = ("d" + c for c in coords)
-    sx, sy = ("s" + c for c in coords)
-    tx, ty = ("t" + c for c in coords)
-
-    if draw_spec.get("head_width"):
-
-        app_length = (
-            np.hypot(sheet.edge_df[dx], sheet.edge_df[dy]) * sheet.edge_df.length.mean()
-        )
-        patches = [
-            FancyArrow(*edge[[sx, sy, dx, dy]], **arrow_specs)
-            for idx, edge in sheet.edge_df[app_length > 1e-6].iterrows()
-        ]
-        ax.add_collection(
-            PatchCollection(patches, match_original=False, **collections_specs)
-        )
-    else:
-        segments = sheet.edge_df[[sx, sy, tx, ty]].to_numpy().reshape((-1, 2, 2))
-        ax.add_collection(LineCollection(segments, **collections_specs))
-    return ax
 
 
 def _parse_edge_specs(edge_draw_specs, sheet):
@@ -544,6 +829,23 @@ def _get_lines(sheet, coords):
     lines_y = np.insert(lines_y, slice(None, None, 2), np.nan)
     return lines_x, lines_y
 
+
+def _set_axes_proportional_3d(ax):
+    x_range = ax.get_xlim3d()[1] - ax.get_xlim3d()[0]
+    y_range = ax.get_ylim3d()[1] - ax.get_ylim3d()[0]
+    z_range = ax.get_zlim3d()[1] - ax.get_zlim3d()[0]
+    ax.set_box_aspect([x_range, y_range, z_range])
+
+def _auto_tick_fontsize_3d(ax, base_size=8, min_size=4):
+    ranges = np.array([
+        ax.get_xlim3d()[1] - ax.get_xlim3d()[0],
+        ax.get_ylim3d()[1] - ax.get_ylim3d()[0],
+        ax.get_zlim3d()[1] - ax.get_zlim3d()[0],
+    ])
+    max_range = ranges.max()
+    size = max(min_size, round(base_size * min(ranges) / max_range))
+    for ax_obj in [ax.xaxis, ax.yaxis, ax.zaxis]:
+        ax_obj.set_tick_params(labelsize=size)
 
 def plot_forces(
     sheet, geom, model, coords, scaling, ax=None, approx_grad=None, **draw_specs_kw

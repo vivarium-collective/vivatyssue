@@ -34,10 +34,16 @@ class VesselGeometry(SheetGeometry):
 
     @staticmethod
     def update_vert_distance(sheet):
-        distances = np.sqrt(sheet.vert_df['x'].to_numpy()**2 + sheet.vert_df['y'].to_numpy()**2)
+        coords = ["x", "y", "z"]
+        if "axis" in sheet.settings.keys():
+            axis = sheet.settings["axis"]
+        else:
+            axis = "z"
+        coords.remove(axis)
+        distances = np.sqrt(sheet.vert_df[coords[0]].to_numpy()**2 + sheet.vert_df[coords[1]].to_numpy()**2)
         sheet.vert_df['distance_origin'] = distances
-        sheet.vert_df["ox"] = sheet.vert_df["x"]/distances
-        sheet.vert_df["oy"] = sheet.vert_df["y"]/distances
+        sheet.vert_df["o"+f"{coords[0]}"] = sheet.vert_df[f"{coords[0]}"]/distances
+        sheet.vert_df["o"+f"{coords[1]}"] = sheet.vert_df[f"{coords[1]}"]/distances
 
     @classmethod
     def update_all(cls, sheet):

@@ -4,6 +4,9 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from scipy.spatial import cKDTree
+from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
 
 from ..core.monolayer import Monolayer
 from ..core.objects import _is_closed_cell, euler_characteristic
@@ -551,3 +554,422 @@ def fix_pinch(eptm):
     eptm.face_df = eptm.face_df.drop(bad_faces)
     eptm.reset_index()
     eptm.reset_topo()
+
+
+def _face_centroids_normals(eptm, faces):
+    """Returns the centroid and unit (Newell) normal of each face in `faces`.
+
+    Computed directly from vertex positions, so no geometry update is required
+    and the result is independent of the half-edge order within a face.
+    """
+    centroids, normals = {}, {}
+    grouped = eptm.edge_df[eptm.edge_df["face"].isin(faces)].groupby("face")
+    for face, edges in grouped:
+        srce_pos = eptm.vert_df.loc[edges["srce"], eptm.coords].to_numpy()
+        trgt_pos = eptm.vert_df.loc[edges["trgt"], eptm.coords].to_numpy()
+        centroids[face] = srce_pos.mean(axis=0)
+        normal = np.cross(srce_pos, trgt_pos).sum(axis=0)
+        norm = np.linalg.norm(normal)
+        normals[face] = normal / norm if norm > 0 else normal
+    return centroids, normals
+
+
+def _ordered_boundary(eptm, face):
+    """Vertex indices around `face`, in half-edge order."""
+    edges = eptm.edge_df[eptm.edge_df["face"] == face]
+    nxt = dict(zip(edges["srce"].astype(int), edges["trgt"].astype(int)))
+    start = int(edges["srce"].iloc[0])
+    order, v = [start], nxt[start]
+    while v != start and len(order) <= len(nxt):
+        order.append(v)
+        v = nxt[v]
+    return order
+
+
+def _lateral_apico_basal(eptm, face):
+    """Returns (apical_verts, basal_verts) of a lateral `face`, from the apical
+    / basal labels carried by its vertices."""
+    verts = _ordered_boundary(eptm, face)
+    seg = eptm.vert_df.loc[verts, "segment"]
+    apical = [v for v in verts if seg[v] == "apical"]
+    basal = [v for v in verts if seg[v] == "basal"]
+    return apical, basal
+
+
+def _cell_adjacency(eptm):
+    """Set of frozenset({cell_a, cell_b}) for cells sharing a face."""
+    eptm.get_opposite_faces()
+    face_cell = eptm.edge_df.groupby("face")["cell"].first()
+    adjacency = set()
+    for face, opp in eptm.face_df["opposite"].items():
+        if opp != -1 and face in face_cell.index and opp in face_cell.index:
+            adjacency.add(frozenset((int(face_cell[face]), int(face_cell[opp]))))
+    return adjacency
+
+
+def _free_lateral_faces(eptm, segment="lateral"):
+    """Indices of the free (border) faces, restricted to `segment` if set."""
+    eptm.get_opposite_faces()
+    border = eptm.face_df[eptm.face_df["opposite"] == -1]
+    if segment is not None and "segment" in eptm.face_df.columns:
+        border = border[border["segment"] == segment]
+    return list(border.index)
+
+
+def _split_lateral_face(eptm, face):
+    """Cuts a free lateral quad in two across its apico-basal axis.
+
+    A new apical vertex is inserted on the face's apical edge and a new basal
+    vertex on its basal edge (each edge is split in the apical / basal cap face
+    too, via :func:`~tyssue.topology.base_topology.add_vert`), and the two are
+    joined by a new edge, dividing the wall into two coplanar lateral quads of
+    the same cell. This reconciles a valence mismatch in a closing seam: a single
+    wide wall apposed to two narrower walls of the other front (a "2-vs-1
+    pocket") is split so each piece can fuse with its own partner.
+
+    Returns ``(new_apical_vert, new_basal_vert, new_face)`` (indices valid until
+    the following ``reset_index``).
+    """
+    def _segment_edge(face, kind):
+        seg = eptm.vert_df["segment"]
+        edges = eptm.edge_df[eptm.edge_df["face"] == face]
+        match = (seg.loc[edges["srce"]].values == kind) & (
+            seg.loc[edges["trgt"]].values == kind
+        )
+        return edges.index[match][0]
+
+    na, _, _ = add_vert(eptm, _segment_edge(face, "apical"))
+    nb, _, _ = add_vert(eptm, _segment_edge(face, "basal"))
+    cell = int(eptm.edge_df.loc[eptm.edge_df["face"] == face, "cell"].iloc[0])
+
+    # cyclic boundary is [a1, na, a2, b1, nb, b2]; na and nb are antipodal, so
+    # the half-loop from na to nb is one of the two new quads (na, a2, b1, nb).
+    order = _ordered_boundary(eptm, face)
+    n = len(order)
+    ina = order.index(na)
+    half = [order[(ina + k) % n] for k in range(n // 2 + 1)]
+    assert half[-1] == nb, "unexpected lateral-face boundary in split"
+
+    new_face_row = eptm.face_df.loc[[face]].copy()
+    new_face_row.index = [eptm.face_df.index.max() + 1]
+    eptm.face_df = pd.concat([eptm.face_df, new_face_row])
+    new_face = eptm.face_df.index[-1]
+
+    def _half_edge(srce, trgt):
+        edges = eptm.edge_df
+        return edges.index[
+            (edges["face"] == face) & (edges["srce"] == srce) & (edges["trgt"] == trgt)
+        ][0]
+
+    for srce, trgt in zip(half[:-1], half[1:]):
+        eptm.edge_df.loc[_half_edge(srce, trgt), "face"] = new_face
+
+    template = eptm.edge_df[eptm.edge_df["face"] == face].iloc[[0]]
+    for srce, trgt, fc in ((nb, na, new_face), (na, nb, face)):
+        new_edge = template.copy()
+        new_edge.index = [eptm.edge_df.index.max() + 1]
+        eptm.edge_df = pd.concat([eptm.edge_df, new_edge])
+        idx = eptm.edge_df.index[-1]
+        eptm.edge_df.loc[idx, ["srce", "trgt", "face", "cell"]] = [srce, trgt, fc, cell]
+
+    eptm.reset_index()
+    eptm.reset_topo()
+    logger.info("split lateral face %d into %d and %d", face, face, new_face)
+    return na, nb, new_face
+
+
+def fuse_lateral_faces(eptm, face_g, face_f, validate=True):
+    """Welds two apposed free lateral faces into one internal interface.
+
+    The vertices of `face_g` (cell A) and `face_f` (cell B) are matched
+    **within their apico-basal segment** -- apical vertices only to apical, basal
+    only to basal -- and welded pairwise, so the two faces end up with an
+    identical vertex set and :meth:`Epithelium.get_opposite_faces` registers them
+    as opposites. Vertices the two faces already share (a seam corner / edge from
+    a neighbouring fusion) are left in place; only the remaining ones are welded.
+
+    The weld requires equal numbers of unshared apical (and basal) vertices on
+    the two faces -- the quad-quad case. A genuine valence/registration mismatch
+    (e.g. differing rim densities) returns -1 rather than fusing.
+
+    Returns 0 on success, -1 if it could not (validly) fuse.
+    """
+    if validate:
+        vert_bak = eptm.vert_df.copy()
+        edge_bak = eptm.edge_df.copy()
+        face_bak = eptm.face_df.copy()
+
+    g_ap, g_ba = _lateral_apico_basal(eptm, face_g)
+    f_ap, f_ba = _lateral_apico_basal(eptm, face_f)
+
+    shared = set(g_ap + g_ba) & set(f_ap + f_ba)
+    g_ap = [v for v in g_ap if v not in shared]
+    g_ba = [v for v in g_ba if v not in shared]
+    f_ap = [v for v in f_ap if v not in shared]
+    f_ba = [v for v in f_ba if v not in shared]
+
+    if not (g_ap or g_ba):
+        return 0  # already coincident
+    if len(g_ap) != len(f_ap) or len(g_ba) != len(f_ba):
+        return -1  # valence / registration mismatch -- deferred
+
+    pairs = []
+    for gv, fv in (g_ap, f_ap), (g_ba, f_ba):
+        if not gv:
+            continue
+        cost = cdist(
+            eptm.vert_df.loc[gv, eptm.coords].to_numpy(),
+            eptm.vert_df.loc[fv, eptm.coords].to_numpy(),
+        )
+        rows, cols = linear_sum_assignment(cost)
+        pairs += [(gv[r], fv[c]) for r, c in zip(rows, cols)]
+
+    for va, vb in pairs:
+        v_keep, v_drop = sorted((int(va), int(vb)))
+        eptm.vert_df.loc[v_keep, eptm.coords] = (
+            eptm.vert_df.loc[[v_keep, v_drop], eptm.coords].mean(axis=0).to_numpy()
+        )
+        eptm.edge_df.replace({"srce": v_drop, "trgt": v_drop}, v_keep, inplace=True)
+        eptm.vert_df.drop(v_drop, axis=0, inplace=True)
+
+    degenerate = eptm.edge_df.query("srce == trgt")
+    if degenerate.shape[0]:
+        eptm.edge_df.drop(degenerate.index, axis=0, inplace=True)
+
+    eptm.reset_index()
+    eptm.reset_topo()
+    fix_pinch(eptm)
+    eptm.get_opposite_faces()
+    eptm.reset_index()
+    eptm.reset_topo()
+
+    if validate and not eptm.validate():
+        eptm.vert_df = vert_bak
+        eptm.edge_df = edge_bak
+        eptm.face_df = face_bak
+        eptm.reset_index()
+        eptm.reset_topo()
+        eptm.get_opposite_faces()
+        logger.info("rolled back invalid lateral fusion (%d, %d)", face_g, face_f)
+        return -1
+
+    logger.info("fused lateral faces %d and %d", face_g, face_f)
+    return 0
+
+
+def find_fusion_nucleations(eptm, d_max=None, theta_face=45.0, margin=0.5,
+                            segment="lateral"):
+    """Finds apposed free lateral faces that are approaching but not yet joined.
+
+    A pair ``(g, f)`` is returned when both are free `segment` faces of two
+    **different, not-yet-adjacent** cells that do **not** already share an edge,
+    their outward normals are anti-parallel to within `theta_face`, and a vertex
+    of one lies within `d_max` of the other's plane (and laterally over it, to
+    within `margin`). This nucleates a seam where two fronts first meet, at any
+    relative angle -- no face coincidence required.
+    """
+    faces = _free_lateral_faces(eptm, segment)
+    if len(faces) < 2:
+        return []
+
+    if d_max is None:
+        d_max = eptm.settings.get("fusion_distance", None)
+    if d_max is None:
+        bedges = eptm.edge_df[eptm.edge_df["face"].isin(faces)]
+        if "length" in bedges.columns:
+            d_max = float(bedges["length"].mean())
+        else:
+            d_max = 0.5
+
+    centroids, normals = _face_centroids_normals(eptm, faces)
+    bedges = eptm.edge_df[eptm.edge_df["face"].isin(faces)]
+    face_cell = bedges.groupby("face")["cell"].first().to_dict()
+    face_verts = bedges.groupby("face")["srce"].apply(lambda s: set(s)).to_dict()
+    radius = {
+        face: np.linalg.norm(
+            eptm.vert_df.loc[list(face_verts[face]), eptm.coords].to_numpy()
+            - centroids[face],
+            axis=1,
+        ).max()
+        for face in faces
+    }
+    adjacency = _cell_adjacency(eptm)
+
+    cent_arr = np.array([centroids[f] for f in faces])
+    tree = cKDTree(cent_arr)
+    cos_face = np.cos(np.radians(theta_face))
+    max_radius = max(radius.values())
+
+    candidates = []
+    for i, j in tree.query_pairs(d_max + 2 * max_radius):
+        g, f = faces[i], faces[j]
+        cg, cf = face_cell[g], face_cell[f]
+        if cg == cf or frozenset((cg, cf)) in adjacency:
+            continue
+        if len(face_verts[g] & face_verts[f]) >= 2:
+            continue  # share an edge -> handled by propagation
+        if np.dot(normals[g], normals[f]) > -cos_face:
+            continue  # not anti-parallel enough
+        gpos = eptm.vert_df.loc[list(face_verts[g]), eptm.coords].to_numpy()
+        rel = gpos - centroids[f]
+        perp = rel @ normals[f]
+        lateral = np.linalg.norm(rel - np.outer(perp, normals[f]), axis=1)
+        hit = (np.abs(perp) < d_max) & (lateral < radius[f] * (1 + margin))
+        if hit.any():
+            candidates.append((g, f, np.abs(perp[hit]).min()))
+
+    candidates.sort(key=lambda c: c[2])
+    out, used = [], set()
+    for g, f, _ in candidates:
+        if g in used or f in used:
+            continue
+        out.append((int(g), int(f)))
+        used.update((g, f))
+    return out
+
+
+def find_fusion_propagations(eptm, theta_fold=20.0, segment="lateral"):
+    """Finds free lateral faces that have folded together along a shared edge.
+
+    A pair ``(g, f)`` is returned when both are free `segment` faces of two
+    **different, not-yet-adjacent** cells that **share an edge** (the seam edge
+    welded by a neighbouring fusion) and whose *fold angle* about that edge is
+    below `theta_fold` -- i.e. the two flaps have closed onto each other. This
+    walks the seam outward from a nucleation as the rim closes. Same-front
+    neighbours are excluded because their cells are already face-adjacent.
+    """
+    faces = _free_lateral_faces(eptm, segment)
+    if len(faces) < 2:
+        return []
+
+    centroids, _ = _face_centroids_normals(eptm, faces)
+    bedges = eptm.edge_df[eptm.edge_df["face"].isin(faces)]
+    face_cell = bedges.groupby("face")["cell"].first().to_dict()
+    adjacency = _cell_adjacency(eptm)
+
+    edge_faces = {}
+    for face, srce, trgt in bedges[["face", "srce", "trgt"]].to_numpy():
+        key = (int(min(srce, trgt)), int(max(srce, trgt)))
+        edge_faces.setdefault(key, set()).add(int(face))
+
+    cos_fold = np.cos(np.radians(theta_fold))
+    pos = eptm.vert_df[eptm.coords]
+    candidates = []
+    for (a, b), efaces in edge_faces.items():
+        if len(efaces) < 2:
+            continue
+        e_mid = (pos.loc[a].to_numpy() + pos.loc[b].to_numpy()) / 2
+        for g, f in itertools.combinations(sorted(efaces), 2):
+            cg, cf = face_cell[g], face_cell[f]
+            if cg == cf or frozenset((cg, cf)) in adjacency:
+                continue
+            r_g = centroids[g] - e_mid
+            r_f = centroids[f] - e_mid
+            ng, nf = np.linalg.norm(r_g), np.linalg.norm(r_f)
+            if ng == 0 or nf == 0:
+                continue
+            cos_phi = np.dot(r_g, r_f) / (ng * nf)
+            if cos_phi > cos_fold:  # angle below theta_fold -> folded together
+                candidates.append((g, f, np.arccos(np.clip(cos_phi, -1, 1))))
+
+    candidates.sort(key=lambda c: c[2])
+    out, used = [], set()
+    for g, f, _ in candidates:
+        if g in used or f in used:
+            continue
+        out.append((int(g), int(f)))
+        used.update((g, f))
+    return out
+
+
+def find_fusion_splits(eptm, theta_fold=20.0, segment="lateral"):
+    """Finds wide walls straddling a valence mismatch in a closing seam.
+
+    A free `segment` face is returned when it has folded (within `theta_fold`)
+    against **two or more distinct** free `segment` faces belonging to different,
+    not-yet-adjacent cells -- i.e. a single wall apposed to two walls of the
+    other front (a "2-vs-1 pocket", left behind when two fusions trap an unequal
+    number of cells between them). Such a face must be split
+    (:func:`_split_lateral_face`) before the pocket can zip shut. Returns the
+    faces to split, widest mismatch first.
+    """
+    faces = _free_lateral_faces(eptm, segment)
+    if len(faces) < 3:
+        return []
+
+    centroids, _ = _face_centroids_normals(eptm, faces)
+    bedges = eptm.edge_df[eptm.edge_df["face"].isin(faces)]
+    face_cell = bedges.groupby("face")["cell"].first().to_dict()
+    adjacency = _cell_adjacency(eptm)
+
+    edge_faces = {}
+    for face, srce, trgt in bedges[["face", "srce", "trgt"]].to_numpy():
+        key = (int(min(srce, trgt)), int(max(srce, trgt)))
+        edge_faces.setdefault(key, set()).add(int(face))
+
+    cos_fold = np.cos(np.radians(theta_fold))
+    pos = eptm.vert_df[eptm.coords]
+    # for each free face, collect the distinct opposing cells it is folded against
+    opposing = {face: set() for face in faces}
+    for (a, b), efaces in edge_faces.items():
+        if len(efaces) < 2:
+            continue
+        e_mid = (pos.loc[a].to_numpy() + pos.loc[b].to_numpy()) / 2
+        for g, f in itertools.combinations(sorted(efaces), 2):
+            cg, cf = face_cell[g], face_cell[f]
+            if cg == cf or frozenset((cg, cf)) in adjacency:
+                continue
+            r_g = centroids[g] - e_mid
+            r_f = centroids[f] - e_mid
+            ng, nf = np.linalg.norm(r_g), np.linalg.norm(r_f)
+            if ng == 0 or nf == 0:
+                continue
+            if np.dot(r_g, r_f) / (ng * nf) > cos_fold:  # folded together
+                opposing[g].add(cf)
+                opposing[f].add(cg)
+
+    splits = [(face, len(cells)) for face, cells in opposing.items() if len(cells) >= 2]
+    splits.sort(key=lambda c: c[1], reverse=True)
+    return [int(face) for face, _ in splits]
+
+
+def all_lateral_fusions(eptm, d_max=None, theta_face=45.0, theta_fold=20.0,
+                        margin=0.5, segment="lateral", validate=True):
+    """Performs every available lateral-face fusion on `eptm`.
+
+    Each round it extends existing seams (:func:`find_fusion_propagations`) and
+    nucleates new ones (:func:`find_fusion_nucleations`), applies one valid
+    :func:`fuse_lateral_faces`, then re-detects (indices change). When a wall
+    straddles a valence mismatch (a "2-vs-1 pocket", :func:`find_fusion_splits`)
+    it is divided with :func:`_split_lateral_face` so the pocket can finish
+    zipping. Mismatched or invalid fusions are skipped.
+
+    Returns the number of fusions performed (splits are not counted).
+    """
+    count = 0
+    max_rounds = 4 * eptm.face_df.shape[0] + 10
+    for _ in range(max_rounds):
+        splits = find_fusion_splits(eptm, theta_fold=theta_fold, segment=segment)
+        flagged = set(splits)
+        candidates = find_fusion_propagations(
+            eptm, theta_fold=theta_fold, segment=segment
+        ) + find_fusion_nucleations(
+            eptm, d_max=d_max, theta_face=theta_face, margin=margin, segment=segment
+        )
+        # don't fuse a wall that needs splitting first -- it would mis-weld the
+        # far corner of the wide wall onto a single narrow partner.
+        candidates = [
+            (g, f) for g, f in candidates if g not in flagged and f not in flagged
+        ]
+        progressed = False
+        for g, f in candidates:
+            if fuse_lateral_faces(eptm, g, f, validate=validate) == 0:
+                count += 1
+                progressed = True
+                break  # indices changed, re-detect
+        if not progressed and splits:
+            _split_lateral_face(eptm, splits[0])
+            progressed = True  # a piece can now fuse on the next round
+        if not progressed:
+            break
+    return count

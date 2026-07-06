@@ -1,6 +1,10 @@
+from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
+import matplotlib.collections as mcollections
+import numpy as np
+
 from .ipv_draw import browse_history  # noqa
 from .ipv_draw import sheet_view as sheet_view_3d  # noqa
-from .plt_draw import create_gif, plot_forces, quick_edge_draw  # noqa
+from .plt_draw import create_gif, create_gif_3d, plot_forces, quick_edge_draw  # noqa
 from .plt_draw import sheet_view as sheet_view_2d  # noqa
 
 try:
@@ -8,7 +12,6 @@ try:
 except OSError:
     print("vispy  won't work")
     sheet_view_vispy = None
-
 
 def sheet_view(sheet, coords=["x", "y", "z"], ax=None, mode="2D", **draw_specs_kw):
     """Main plotting function in 2D or 3D.

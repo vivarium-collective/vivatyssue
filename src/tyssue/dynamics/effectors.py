@@ -820,14 +820,20 @@ class VesselSurfaceElasticity(AbstractEffector):
 
     @staticmethod
     def gradient(eptm):
+        coords = ["x", "y", "z"]
+        if "axis" in eptm.settings.keys():
+            axis = eptm.settings["axis"]
+        else:
+            axis = "z"
+        coords.remove(axis)
         ka_a0_ = elastic_force(
             eptm.vert_df, "distance_origin", lambda df: df["vessel_elasticity"] * df["is_alive"], "prefered_radius"
         )
 
         ka_a0 = to_nd(ka_a0_, len(eptm.coords))
 
-        grad = eptm.vert_df[["o" + x for x in ["x", "y"]]].copy()
-        grad["oz"] = 0
+        grad = eptm.vert_df[["o" + x for x in coords]].copy()
+        grad["o" + f"{axis}"] = 0
         grad = grad.to_numpy()
 
         grad = pd.DataFrame(grad * ka_a0)
