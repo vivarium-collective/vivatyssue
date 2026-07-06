@@ -681,10 +681,18 @@ class Epithelium:
         """Set the 'is_valid' column to true if the faces are all closed polygons,
         and the cells closed polyhedra.
         """
-        is_valid_face = self.edge_df.groupby("face").apply(_test_valid, include_groups=True)
+        # pandas 3.0 removed `include_groups` and now excludes the grouping
+        # column from each group; but `_test_valid`/`_ordered_edges` need the
+        # `face` column. Re-add it inside apply from the group key (`g.name`),
+        # reproducing the old include_groups=True behaviour.
+        is_valid_face = self.edge_df.groupby("face").apply(
+            lambda g: _test_valid(g.assign(face=g.name))
+        )
         is_valid = self.upcast_face(is_valid_face)
         if "cell" in self.data_names:
-            is_valid_cell = self.edge_df.groupby("cell").apply(_is_closed_cell)
+            is_valid_cell = self.edge_df.groupby("cell").apply(
+                lambda g: _is_closed_cell(g.assign(cell=g.name))
+            )
             is_valid = np.logical_and(is_valid, self.upcast_cell(is_valid_cell))
         self.edge_df["is_valid"] = is_valid
         return is_valid
