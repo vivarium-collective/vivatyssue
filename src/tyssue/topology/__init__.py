@@ -18,12 +18,17 @@ from .base_topology import (  # noqa: F401
     merge_vertices,
     split_vert,
 )
-from .bulk_topology import (
+from .bulk_topology import (  # noqa: F401
     HI_transition,
     IH_transition,
+    all_lateral_fusions,
     find_HIs,
     find_IHs,
+    find_fusion_nucleations,
+    find_fusion_propagations,
+    find_fusion_splits,
     find_rearangements,
+    fuse_lateral_faces,
 )
 from .sheet_topology import remove_face, type1_transition
 
