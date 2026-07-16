@@ -83,8 +83,12 @@ def detach_vertices(sheet):
     to_detach = np.concatenate([rank4[dice4 < p_4], rank5p[dice5p < p_5p]])
     if to_detach.size:
         logger.info(f"Detaching {to_detach.size} vertices")
+        nv = sheet.Nv
         for vert in to_detach:
             split_vert(sheet, vert)
+
+        if sheet.Nv != nv:
+            sheet.network_changed = True
 
 
 def set_value(sheet, element, index, set_value, col):
