@@ -249,6 +249,19 @@ def create_gif_3d(
     ylim = bounds.loc["min", y] - margin_val, bounds.loc["max", y] + margin_val
     zlim = bounds.loc["min", z] - margin_val, bounds.loc["max", z] + margin_val
 
+    # One FIXED figure size for every frame, shaped to the data box so a tissue
+    # that is much longer along one axis (e.g. a crypt cylinder in z) gets a
+    # correspondingly tall frame instead of a square one. Combined with dropping
+    # bbox_inches="tight" below, this makes every saved frame byte-for-byte the
+    # same pixel dimensions — otherwise tight-cropping resizes each frame to its
+    # own content, and imagemagick rescales the differently-sized frames so the
+    # crypt appears to stretch / squash from frame to frame in the assembled gif.
+    xr = xlim[1] - xlim[0]
+    yr = ylim[1] - ylim[0]
+    zr = zlim[1] - zlim[0]
+    fig_w = 6.4
+    fig_h = min(12.0, 4.8 * max(1.0, zr / max(xr, yr, 1e-9)))
+
     for i, (t, sheet) in enumerate(history.browse(start, stop, num_frames)):
         try:
             if len(dynamic_draw_kwds) > 0:
@@ -256,13 +269,25 @@ def create_gif_3d(
                     update_kwds = func(sheet)
                     draw_kwds = deep_update(draw_kwds, update_kwds)
 
-            fig = plt.figure()
+            fig = plt.figure(figsize=(fig_w, fig_h))
             ax = fig.add_subplot(111, projection="3d")
             ax.view_init(elev=view_angle[0], azim=view_angle[1])
 
             fig, ax = draw_func(sheet, ax=ax, legend=legend, cull_back_edges=cull_back_edges, **draw_kwds)
             patch_2d_collections_to_3d(ax)
             ax.set(xlim=xlim, ylim=ylim, zlim=zlim)
+            # draw_func (sheet_view_3d) set the box aspect from THIS frame's own
+            # auto-scaled limits; we just overrode the limits with the fixed
+            # frame-0 ones, so recompute the box aspect to match. Without this the
+            # aspect tracks each frame's data extent, so a tissue that is much longer
+            # along one axis (e.g. a crypt cylinder in z) looks correctly elongated
+            # on some frames and squashed to a cube on others.
+            _set_axes_proportional_3d(ax)
+            # draw_func also sized the tick labels from this frame's own auto-scaled
+            # ranges, so the font jumps frame to frame (and the degenerate per-frame
+            # autoscale can overflow). Recompute it from the FIXED limits we just set
+            # so every frame gets the same, finite tick-label size.
+            _auto_tick_fontsize_3d(ax, base_size=8, min_size=4)
             ax.set_title(f"t = {t:.2f}")
 
         except Exception as e:
@@ -270,10 +295,13 @@ def create_gif_3d(
             print(e)
             continue
 
+        # NB: no bbox_inches="tight" — tight-cropping resizes each frame to its own
+        # content, so frames end up different pixel sizes and the gif rescales them
+        # (the crypt appears to change proportion). The fixed figsize above keeps
+        # every frame identical in size; box_aspect keeps the axes proportional.
         fig.savefig(
             graph_dir / f"movie_{i:04d}.png",
             dpi=dpi,
-            bbox_inches="tight",
         )
         plt.close(fig)
 
