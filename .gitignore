@@ -90,3 +90,9 @@ tests/behaviors/output/
 
 # notebook-generated demo media
 notebooks/closure_demo_output/
+
+# macOS finder metadata
+.DS_Store
+
+# python bytecode cache
+__pycache__/

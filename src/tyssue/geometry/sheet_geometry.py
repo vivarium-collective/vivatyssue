@@ -124,9 +124,23 @@ class SheetGeometry(PlanarGeometry):
 
         sheet.vert_df["height"] = sheet.vert_df["rho"] - sheet.vert_df["basal_shift"]
 
-        edge_height = sheet.upcast_srce(sheet.vert_df[["height", "rho"]])
-        edge_height.set_index(sheet.edge_df["face"], append=True, inplace=True)
-        sheet.face_df[["height", "rho"]] = edge_height.groupby(level="face").mean()
+        # Face-level mean of the source vertices' height/rho. Equivalent to
+        #     upcast_srce(...).groupby(face).mean()
+        # but done with bincount: the groupby builds an Ne x 2 intermediate frame
+        # and dominated update_height (0.717 ms of 0.761 ms on a 704-face crypt),
+        # which matters because update_height is per-step for every backend.
+        # Faces carrying no edge get NaN, exactly as the groupby's reindex did.
+        srce_pos = sheet.vert_df.index.get_indexer(sheet.edge_df["srce"])
+        face_pos = sheet.face_df.index.get_indexer(sheet.edge_df["face"])
+        counts = np.bincount(face_pos, minlength=sheet.face_df.shape[0])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            for col in ("height", "rho"):
+                totals = np.bincount(
+                    face_pos,
+                    weights=sheet.vert_df[col].to_numpy()[srce_pos],
+                    minlength=sheet.face_df.shape[0],
+                )
+                sheet.face_df[col] = np.where(counts > 0, totals / counts, np.nan)
 
     @staticmethod
     def update_boundary_index(sheet):
