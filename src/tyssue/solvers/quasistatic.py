@@ -8,7 +8,6 @@ import numpy as np
 from scipy import optimize
 
 from .. import config
-from ..collisions import auto_collisions
 from ..topology import auto_t1, auto_t3
 from .base import TopologyChangeError, set_pos
 
@@ -30,14 +29,12 @@ class QSSolver:
       by the model
     """
 
-    def __init__(self, with_collisions=False, with_t1=False, with_t3=False):
+    def __init__(self, with_t1=False, with_t3=False):
         """Creates a quasistatic gradient descent solver with optional
-        type1, type3 and collision detection and solving routines.
+        type1 and type3 transition solving routines.
 
         Parameters
         ----------
-        with_collisions : bool, default False
-            wheter or not to solve collisions
         with_t1 : bool, default False
             whether or not to solve type 1 transitions at each
             iteration.
@@ -47,7 +44,7 @@ class QSSolver:
             iteration.
 
         Those corrections are applied in this order: first the type 1, then the
-        type 3, then the collisions
+        type 3
 
         """
         self.set_pos = set_pos
@@ -55,8 +52,6 @@ class QSSolver:
             self.set_pos = auto_t1(self.set_pos)
         if with_t3:
             self.set_pos = auto_t3(self.set_pos)
-        if with_collisions:
-            self.set_pos = auto_collisions(self.set_pos)
         self.restart = True
         self.rearange = with_t1 or with_t3
         self.res = {"success": False, "message": "Not Started"}

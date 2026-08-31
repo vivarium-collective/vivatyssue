@@ -1,4 +1,4 @@
-Since version 0.3, tyssue depends on CGAL for collision detection, and thus a c++ compiler toolchain. It is thus advised to use conda for a simple installation procedure.
+tyssue is a pure python package. It can be installed with `conda` or `pip`, with no compiler toolchain required.
 
 ## Installing tyssue with conda
 
@@ -7,15 +7,9 @@ If you have a conda environment ready:
 conda install -c conda-forge tyssue
 ```
 
-This will install tyssue and all its dependencies, with the pre-compiled binary parts.
+This will install tyssue and all its dependencies.
 
 ## Install tyssue using pip
-
-This install a cross-platform, pure python version of tyssue.
-Some advanced features are not available, namely:
-
-- Collision detection
-- Periodic boundary sheet generation
 
 ```sh
 python -m pip install --user --upgrade tyssue
@@ -23,27 +17,19 @@ python -m pip install --user --upgrade tyssue
 
 ## Installing from source
 
-Those are the instructions to install the package from source on a
-debian-like linux distribution. If you allready have a basic
-scientific python stack, use it, don't install anaconda.
-
-### Install a C++ compiler
-
-With an Debian like system, this is achieved by:
-
-```bash
-sudo apt install build-essential cmake g++
-```
+Those are the instructions to install the package from source. If you
+allready have a basic scientific python stack, use it, don't install
+anaconda.
 
 ### Download and install `tyssue` from source
 
 If you want to do that, I assume you allready know how to manage
 dependencies on your platform. The simplest way to manage dependencies is to use [`conda`](https://docs.conda.io/en/latest/miniconda.html) to manage the dependencies (you can use [`mamba`](https://github.com/mamba-org/mamba) as a faster alternative to conda).
 
-Start by cloning tyssue recursively to also grab pybind11:
+Start by cloning tyssue:
 
 ```bash
-git clone --recursive https://github.com/damcb/tyssue.git
+git clone https://github.com/damcb/tyssue.git
 cd tyssue
 ```
 
@@ -53,9 +39,9 @@ Then create a virtual environement:
 conda env create -f environment.yml
 ```
 
-Then install python:
+Then install tyssue:
 ```
-python setup.py install
+python -m pip install .
 ```
 
 

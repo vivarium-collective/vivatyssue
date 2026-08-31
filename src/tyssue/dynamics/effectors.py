@@ -125,13 +125,13 @@ class LengthElasticity(AbstractEffector):
     @staticmethod
     def energy(eptm):
         return elastic_energy(
-            eptm.edge_df, "length", lambda df: df["length_elasticity"] * df["is_alive"], "prefered_length"
+            eptm.edge_df, "length", lambda df: df["length_elasticity"] * df["is_active"], "prefered_length"
         )
 
     @staticmethod
     def gradient(eptm):
         kl_l0 = elastic_force(
-            eptm.edge_df, "length", lambda df: df["length_elasticity"] * df["is_alive"], "prefered_length"
+            eptm.edge_df, "length", lambda df: df["length_elasticity"] * df["is_active"], "prefered_length"
         )
         grad = eptm.edge_df[eptm.ucoords] * to_nd(kl_l0, eptm.dim)
         grad.columns = ["g" + u for u in eptm.coords]

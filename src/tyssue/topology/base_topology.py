@@ -49,9 +49,10 @@ def split_vert(sheet, vert, face, to_rewire, epsilon, recenter=False):
         sheet.vert_df.loc[new_vert, sheet.coords] += shift
 
     # rewire
-    sheet.edge_df.loc[to_rewire.index] = to_rewire.replace(
-        {"srce": vert, "trgt": vert}, new_vert
-    )
+    rewired = to_rewire.copy()
+    for co in ("srce", "trgt"):
+        rewired.loc[rewired[co] == vert, co] = new_vert
+    sheet.edge_df.loc[to_rewire.index] = rewired
 
 
 def add_vert(eptm, edge):
@@ -200,7 +201,8 @@ def remove_face(sheet, face):
     new_vert = sheet.vert_df.index[-1]
 
     # collapse all edges connected to the face vertices
-    sheet.edge_df.replace({"srce": verts, "trgt": verts}, new_vert, inplace=True)
+    for co in ("srce", "trgt"):
+        sheet.edge_df.loc[sheet.edge_df[co].isin(verts), co] = new_vert
 
     collapsed = sheet.edge_df.query("srce == trgt")
 
@@ -262,7 +264,8 @@ def collapse_edge(sheet, edge, reindex=True, allow_two_sided=False):
     ].mean(axis=0)
     sheet.vert_df.drop(trgt, axis=0, inplace=True)
     # rewire
-    sheet.edge_df.replace({"srce": trgt, "trgt": trgt}, srce, inplace=True)
+    for co in ("srce", "trgt"):
+        sheet.edge_df.loc[sheet.edge_df[co] == trgt, co] = srce
     # all the edges parallel to the original
     collapsed = sheet.edge_df.query("srce == trgt")
     sheet.edge_df.drop(collapsed.index, axis=0, inplace=True)
@@ -331,9 +334,7 @@ def get_num_common_edges(eptm):
     same edges.
     """
     pairs = get_neighbour_face_pairs(eptm)
-    face_v_pair_orbit = eptm.edge_df.groupby("face").apply(
-        lambda df: frozenset(df["v_pair"])
-    )
+    face_v_pair_orbit = eptm.edge_df.groupby("face")["v_pair"].apply(frozenset)
     n_common = [
         len(face_v_pair_orbit.loc[fa].intersection(face_v_pair_orbit.loc[fb]))
         if face_v_pair_orbit.loc[fb] != face_v_pair_orbit.loc[fa]
@@ -386,11 +387,11 @@ def merge_border_edges(sheet, drop_two_sided=True):
     """
 
     single_trgt = sheet.edge_df[
-        sheet.upcast_trgt(sheet.edge_df.groupby("trgt").apply(len) == 1)
+        sheet.upcast_trgt(sheet.edge_df.groupby("trgt").size() == 1)
     ]
     faces = set(single_trgt["face"])
     single_srce = sheet.edge_df[
-        sheet.upcast_srce(sheet.edge_df.groupby("srce").apply(len) == 1)
+        sheet.upcast_srce(sheet.edge_df.groupby("srce").size() == 1)
     ]
     sheet.edge_df.drop(single_srce.index, inplace=True)
     sheet.edge_df.drop(

@@ -73,14 +73,17 @@ def extrude(apical_datasets, method="homotecy", scale=0.3, vector=[0, 0, -1]):
     basal_edge.index = basal_edge.index + Ne
     basal_edge["segment"] = "basal"
 
+    # np.nan (not a bare object frame): an all-NA *object* column poisons the
+    # concat below, silently turning srce/trgt/num_sides into object dtype, and
+    # pandas warns that a future version will keep doing so for every column.
     lateral_face = pd.DataFrame(
-        index=apical_edge.index + 2 * Nf, columns=apical_face.columns
+        np.nan, index=apical_edge.index + 2 * Nf, columns=apical_face.columns
     )
     lateral_face["segment"] = "lateral"
     lateral_face["is_alive"] = 1
 
     lateral_edge = pd.DataFrame(
-        index=np.arange(2 * Ne, 6 * Ne), columns=apical_edge.columns
+        np.nan, index=np.arange(2 * Ne, 6 * Ne), columns=apical_edge.columns
     )
 
     lateral_edge["cell"] = np.repeat(apical_edge["cell"].values, 4)
@@ -108,6 +111,10 @@ def extrude(apical_datasets, method="homotecy", scale=0.3, vector=[0, 0, -1]):
     lateral_edge.loc[np.arange(2 * Ne + 3, 6 * Ne, 4), "trgt"] = apical_edge[
         "trgt"
     ].values
+
+    # The frame was created as float NaN, so the indices land in it as floats
+    for col in ("srce", "trgt", "face", "cell"):
+        lateral_edge[col] = lateral_edge[col].astype(int)
 
     if method == "homotecy":
         basal_vert[coords] = basal_vert[coords] * scale
@@ -180,6 +187,7 @@ def create_anchors(sheet):
     sheet.vert_df = pd.concat([sheet.vert_df, anchor_vert_df])
     sheet.vert_df.index.name = "vert"
     anchor_edge_df = pd.DataFrame(
+        np.nan,
         index=np.arange(sheet.Ne, sheet.Ne + free_vert.shape[0]),
         columns=sheet.edge_df.columns,
     )
@@ -190,6 +198,8 @@ def create_anchors(sheet):
     anchor_edge_df["is_anchor"] = 1
     anchor_edge_df["face"] = -1
     anchor_edge_df["at_border"] = 0
+    for col in ("srce", "trgt", "face"):
+        anchor_edge_df[col] = anchor_edge_df[col].astype(int)
     sheet.edge_df = pd.concat([sheet.edge_df, anchor_edge_df], sort=True)
     sheet.edge_df.index.name = "edge"
     sheet.reset_topo()
@@ -231,10 +241,12 @@ def subdivide_faces(eptm, faces):
     upcast_new_vs = new_vs_idx.loc[edge_df["face"]].values
 
     new_vs = pd.DataFrame(
+        np.nan,
         index=pd.Index(np.arange(eptm.Nv, eptm.Nv + Nsf), name="vert"),
         columns=vert_df.columns,
     )
     new_es = pd.DataFrame(
+        np.nan,
         index=pd.Index(np.arange(eptm.Ne, eptm.Ne + 2 * Nse), name="edge"),
         columns=edge_df.columns,
     )
@@ -251,6 +263,8 @@ def subdivide_faces(eptm, faces):
     new_es["face"] = np.concatenate([edge_df["face"], edge_df["face"]])
     new_es["srce"] = np.concatenate([edge_df["trgt"].values, upcast_new_vs])
     new_es["trgt"] = np.concatenate([upcast_new_vs, edge_df["srce"].values])
+    for col in ("srce", "trgt", "face") + (("cell",) if "cell" in edge_df else ()):
+        new_es[col] = new_es[col].astype(int)
     new_dset = {
         "edge": pd.concat([eptm.edge_df, new_es]),
         "face": eptm.face_df,  # pd.concat([untouched_faces, new_fs]),

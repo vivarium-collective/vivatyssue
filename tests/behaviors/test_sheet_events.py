@@ -106,7 +106,7 @@ def test_execute_constriction():
     init_nb_cells = len(sheet.face_df)
 
     sheet.face_df["is_mesoderm"] = 0
-    sheet.vert_df["radial_tension"] = 0
+    sheet.vert_df["radial_tension"] = 0.0
     manager = EventManager("face")
     face_id = 17
     sheet.face_df.loc[face_id, "is_mesoderm"] = 1

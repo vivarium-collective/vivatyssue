@@ -4,13 +4,7 @@ channels:
 
 dependencies:
 - python=3.10
-- cmake
-- pybind11
 - pip
-- boost-cpp
-- mpfr
-- gmp
-- cgal
 - numpy
 - scipy
 - matplotlib
@@ -28,5 +22,3 @@ dependencies:
 - meshio
 - zarr
 - xarray
-- scikit-build-core
-- setuptools-scm

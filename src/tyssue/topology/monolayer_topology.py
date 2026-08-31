@@ -82,6 +82,8 @@ def cell_division(monolayer, mother, orientation="vertical", psi=None):
 
 def _vertical_plane_normal(ab_axis, psi=None):
 
+    # basal_apical_axis returns a Series, which indexes by label
+    ab_axis = np.asarray(ab_axis, dtype=float)
     # Find the simplest vector perpendicular to the ab_axis
     perp_axis = np.array([-ab_axis[1], ab_axis[0], 0])
 

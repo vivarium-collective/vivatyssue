@@ -207,6 +207,11 @@ def ab_pull(sheet, face, radial_tension, distributed=False):
     if distributed:
         radial_tension = radial_tension / len(verts)
 
+    # Tension is continuous; an integer column (from e.g. a `= 0` default set
+    # by hand) cannot hold the increment and raises in future pandas.
+    if sheet.vert_df["radial_tension"].dtype.kind in "iub":
+        sheet.vert_df["radial_tension"] = sheet.vert_df["radial_tension"].astype(float)
+
     sheet.vert_df.loc[verts, "radial_tension"] += radial_tension
 
 

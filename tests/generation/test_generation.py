@@ -39,7 +39,7 @@ def test_from_3d_voronoi():
 
     # GH 137
     assert (
-        bulk.edge_df.groupby("face").apply(lambda df: df["cell"].unique().size).max()
+        bulk.edge_df.groupby("face")["cell"].nunique().max()
         == 1
     )
     assert bulk.validate()

@@ -33,8 +33,11 @@ class PlanarGeometry(BaseGeometry):
         rcoords = ["r" + c for c in sheet.coords]
         dcoords = ["d" + c for c in sheet.coords]
 
-        normals = np.cross(sheet.edge_df[rcoords], sheet.edge_df[dcoords])
-        sheet.edge_df["nz"] = normals
+        # np.cross on 2-vectors is deprecated in NumPy 2; in the plane the
+        # cross product has only a z component, so write it out.
+        rx, ry = (sheet.edge_df[c] for c in rcoords)
+        dx, dy = (sheet.edge_df[c] for c in dcoords)
+        sheet.edge_df["nz"] = rx * dy - ry * dx
 
     @staticmethod
     def update_areas(sheet):
@@ -152,7 +155,7 @@ class WeightedPerimeterPlanarGeometry(PlanarGeometry):
         """
         sheet.edge_df["num_sides"] = sheet.upcast_face("num_sides")
         sheet.edge_df["weight"] = (
-            sheet.edge_df.groupby("face")
+            sheet.edge_df.groupby("face")[["num_sides", "weight"]]
             .apply(lambda df: (df["num_sides"] * df["weight"] / df["weight"].sum()))
             .sort_index(level=1)
             .to_numpy()

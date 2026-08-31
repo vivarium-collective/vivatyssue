@@ -247,7 +247,7 @@ class FaceGrid:
         self.specs.update(kwargs)
         e_specs = kwargs
         self.subdivs = {key: EdgeSubdiv(edges_df[key], **e_specs) for key in self.base}
-        self.n_points = np.product(
+        self.n_points = np.prod(
             [
                 subdiv.edge_df["num_particles"].values
                 for subdiv in self.subdivs.values()

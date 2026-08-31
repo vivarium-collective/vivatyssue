@@ -64,6 +64,6 @@ def test_get_phis():
 
     assert np.all(
         sheet.edge_df.sort_values(["face", "sphi"])
-        .groupby("face")
+        .groupby("face")[["srce", "trgt"]]
         .apply(lambda df: np.roll(df["trgt"], 1) == df["srce"])
     )

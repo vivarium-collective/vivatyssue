@@ -2,13 +2,7 @@ name: tyssue
 channels:
   - conda-forge
 dependencies:
-- cmake
-- pybind11
 - pip
-- boost-cpp
-- mpfr
-- gmp
-- cgal
 - python>=3.8
 - numpy
 - scipy

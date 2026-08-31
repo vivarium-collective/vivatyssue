@@ -461,8 +461,10 @@ class Sheet(Epithelium):
 
         grid = hexa_grid2d(nx, ny, distx, disty, noise)
         datasets = from_2d_voronoi(Voronoi(grid))
-        datasets["vert"]["z"] = 0
-        datasets["face"]["z"] = 0
+        # float, not int: vertices are moved by continuous forces, and an int
+        # column silently truncates every displacement written to it
+        datasets["vert"]["z"] = 0.0
+        datasets["face"]["z"] = 0.0
 
         return cls(identifier, datasets, specs=flat_sheet(), coords=["x", "y", "z"])
 

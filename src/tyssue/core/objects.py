@@ -127,6 +127,15 @@ class Epithelium:
         self.update_specs(specs, reset=False)
 
         self.coords = coords
+        # Vertex positions are continuous: an integer coordinate column would
+        # silently truncate every displacement written to it (and raises in
+        # pandas 3). Coerce once here so no caller has to remember.
+        for c in coords:
+            for name in ("vert", "face", "cell"):
+                df = datasets.get(name)
+                if df is not None and c in df.columns and df[c].dtype.kind in "iub":
+                    df[c] = df[c].astype(float)
+
         # edge's dx, dy, dz
         self.dcoords = ["d" + c for c in self.coords]
         # edge's unit length vector
@@ -288,9 +297,7 @@ class Epithelium:
         The data is registered in the `"num_faces"` column of
         `self.cell_df`.
         """
-        self.cell_df["num_faces"] = self.edge_df.groupby("cell").apply(
-            lambda df: df["face"].unique().size
-        )
+        self.cell_df["num_faces"] = self.edge_df.groupby("cell")["face"].nunique()
         self.cell_df["num_ridges"] = self.edge_df.cell.value_counts()
 
     def update_rank(self):
@@ -566,7 +573,7 @@ class Epithelium:
         Name: srce, dtype: int64
 
         """
-        orbits = self.edge_df.groupby(center).apply(lambda df: df[periph])
+        orbits = self.edge_df.groupby(center)[periph].apply(lambda s: s)
         return orbits
 
     def idx_lookup(self, elem_id, element):
@@ -685,17 +692,50 @@ class Epithelium:
         # column from each group; but `_test_valid`/`_ordered_edges` need the
         # `face` column. Re-add it inside apply from the group key (`g.name`),
         # reproducing the old include_groups=True behaviour.
-        is_valid_face = self.edge_df.groupby("face").apply(
+        is_valid_face = self.edge_df.groupby("face")[["srce", "trgt"]].apply(
             lambda g: _test_valid(g.assign(face=g.name))
         )
         is_valid = self.upcast_face(is_valid_face)
         if "cell" in self.data_names:
-            is_valid_cell = self.edge_df.groupby("cell").apply(
-                lambda g: _is_closed_cell(g.assign(cell=g.name))
-            )
+            is_valid_cell = self.edge_df.groupby("cell")[
+                ["srce", "trgt", "face"]
+            ].apply(_is_closed_cell)
             is_valid = np.logical_and(is_valid, self.upcast_cell(is_valid_cell))
         self.edge_df["is_valid"] = is_valid
         return is_valid
+
+    def find_intersections(self, strict=False, cache=None, **kwargs):
+        """Detect where this epithelium has stopped being an embedding.
+
+        ``validate`` is purely combinatorial: it checks that faces are closed
+        polygons, and a bow-tie passes it. This is the geometric counterpart --
+        it finds faces whose boundary crosses itself, vertices that have ended up
+        inside a face they do not belong to, and faces that overlap.
+
+        Parameters
+        ----------
+        strict : bool, default False
+            also run the pairwise face-overlap test (catches a "lens" overlap in
+            which two faces cross with no vertex of either inside the other).
+        cache : RingCache, optional
+            reuse a ring matrix from a previous call; it is rebuilt automatically
+            when the topology changes, which is what makes per-step calls cheap.
+
+        Returns
+        -------
+        report : :class:`tyssue.collisions.intersections.Result`
+            with ``folded``, ``contained``, ``overlaps``, ``open_rings``,
+            ``undecidable`` and a ``clean`` property.
+
+        See Also
+        --------
+        :mod:`tyssue.collisions.intersections` : the tests and their cost
+        :func:`tyssue.behaviors.sheet.basic_events.check_intersections`
+            to run this during a simulation
+        """
+        from ..collisions.intersections import find_intersections
+
+        return find_intersections(self, cache=cache, strict=strict, **kwargs)
 
     def get_invalid(self):
         """Returns a mask over self.edge_df for invalid faces."""
@@ -923,7 +963,7 @@ and try what you where doing again
 
         """
         vertices = self.vert_df[coords]
-        faces = self.edge_df.groupby("face").apply(lambda df: list(df["srce"]))
+        faces = self.edge_df.groupby("face")["srce"].apply(list)
         faces = faces.dropna()
 
         if vertex_normals:
@@ -936,7 +976,9 @@ and try what you where doing again
 
     def validate_closed_cells(self):
         """Returns True if all cells of the epithelium are closed."""
-        euler_chars = self.edge_df.groupby("cell").apply(euler_characteristic)
+        euler_chars = self.edge_df.groupby("cell")[["srce", "trgt", "face"]].apply(
+            euler_characteristic
+        )
         return np.array_equal(np.unique(euler_chars), 2)
 
     def get_opposite_faces(self):
@@ -944,7 +986,7 @@ and try what you where doing again
         the opposite face or -1 if the face has no opposite.
 
         """
-        face_v = self.edge_df.groupby("face").apply(lambda df: frozenset(df["srce"]))
+        face_v = self.edge_df.groupby("face")["srce"].apply(frozenset)
         face_v2 = pd.Series(data=face_v.index, index=face_v.values)
         grouped = face_v2.groupby(level=0)
         cardinal = grouped.apply(len)
@@ -970,7 +1012,9 @@ and try what you where doing again
         """Returns "srce", "trgt", "face" and "edge" indices
         organized clockwise for all faces
         """
-        return self.edge_df.groupby("face").apply(_ordered_edges)
+        return self.edge_df.groupby("face")[["srce", "trgt"]].apply(
+            lambda g: _ordered_edges(g.assign(face=g.name))
+        )
 
 
 def get_opposite_faces(eptm):
@@ -1016,7 +1060,7 @@ def get_next_edges(sheet):
     returns a pd.Series with the index of the next
     edge for each edge
     """
-    next_e = sheet.edge_df.groupby("face").apply(_next_edge)
+    next_e = sheet.edge_df.groupby("face")[["srce", "trgt"]].apply(_next_edge)
     next_e.index = next_e.index.droplevel("face")
     return next_e.sort_index()
 
@@ -1026,7 +1070,7 @@ def get_prev_edges(sheet):
     returns a pd.Series with the index of the next
     edge for each edge
     """
-    prev_e = sheet.edge_df.groupby("face").apply(_prev_edge)
+    prev_e = sheet.edge_df.groupby("face")[["srce", "trgt"]].apply(_prev_edge)
     prev_e.index = prev_e.index.droplevel("face")
     return prev_e.sort_index()
 

@@ -29,7 +29,7 @@ class TestsPlt:
         self.sheet.vert_df["rand"] = np.linspace(
             0.0, 1.0, num=self.sheet.vert_df.shape[0]
         )
-        cmap = plt.cm.get_cmap("viridis")
+        cmap = plt.get_cmap("viridis")
         color_cmap = cmap(self.sheet.vert_df.rand)
         self.draw_specs["vert"]["visible"] = True
         self.draw_specs["vert"]["color"] = color_cmap

@@ -310,7 +310,7 @@ def ar_calculation(sheet, coords=["x", "y"]):
     """
     srce_pos = sheet.upcast_srce(sheet.vert_df[sheet.coords])
     srce_pos["face"] = sheet.edge_df["face"]
-    return srce_pos.groupby("face").apply(_compute_ar, coords)
+    return srce_pos.groupby("face")[coords].apply(_compute_ar, coords)
 
 
 def get_next(eptm):
