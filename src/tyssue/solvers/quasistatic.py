@@ -14,6 +14,9 @@ from .base import TopologyChangeError, set_pos
 log = logging.getLogger(__name__)
 
 MAX_ITER = 100
+# Smallest period the periodic box is allowed to shrink to, so that the
+# box degree of freedom can never cross its own lower boundary.
+MIN_PERIOD = 1e-2
 
 
 class QSSolver:
@@ -147,12 +150,21 @@ class QSSolver:
             for u in eptm.settings["boundaries"]:
                 size = eptm.specs["settings"]["boundaries"][u][1]
             pos0 = np.append(pos0, size)
+            # The last degree of freedom is the upper bound shared by every
+            # axis. Left unbounded, the line search can push it past the fixed
+            # lower bounds: the period turns negative, update_periodic_dcoords
+            # wraps the wrong way and the energy landscape becomes meaningless.
+            lowest = max(
+                boundary[0] for boundary in eptm.settings["boundaries"].values()
+            )
+            bounds = [(None, None)] * (pos0.size - 1) + [(lowest + MIN_PERIOD, None)]
             try:
                 self.res = optimize.minimize(
                     self._opt_energy_pbc,
                     pos0,
                     args=(eptm, geom, model),
                     jac=self._opt_grad_pbc,
+                    bounds=bounds,
                     **kwargs
                 )
                 return self.res

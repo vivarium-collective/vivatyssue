@@ -15,6 +15,11 @@ from tyssue.collisions import intersections as ix
 
 
 # ---------------------------------------------------------------------------
+def cross2(a, b):
+    """z component of the 2D cross product (np.cross dropped 2-vectors)."""
+    return a[0] * b[1] - a[1] * b[0]
+
+
 def make_sheet(verts, faces):
     """Build a Sheet from vertex coordinates and a list of vertex rings."""
     verts = np.asarray(verts, dtype=float)
@@ -65,8 +70,8 @@ def test_reflex_but_simple_polygon_is_not_flagged():
 
     P = np.array(poly)
     c = P.mean(0)
-    fan = sum(abs(np.cross(P[i] - c, P[(i + 1) % 5] - c)) / 2 for i in range(5))
-    vec = abs(sum(np.cross(P[i] - c, P[(i + 1) % 5] - c) for i in range(5)) / 2)
+    fan = sum(abs(cross2(P[i] - c, P[(i + 1) % 5] - c)) / 2 for i in range(5))
+    vec = abs(sum(cross2(P[i] - c, P[(i + 1) % 5] - c) for i in range(5)) / 2)
     assert vec / fan < 0.95, "should fool a |A_vec|/A_fan screen"
 
 

@@ -29,11 +29,11 @@ def load_datasets(store):
     settings: dictionnary
 
     """
-    with zarr.open(store, mode="r") as store_:
-        settings = dict(store_.attrs)
-        keys = store_.group_keys()
+    root = zarr.open_group(store, mode="r")
+    settings = dict(root.attrs)
+    keys = list(root.group_keys())
 
-    datasets = {key: xr.open_zarr(store, key).to_dataframe() for key in keys}
+    datasets = {key: xr.open_zarr(store, group=key).to_dataframe() for key in keys}
 
     return datasets, settings
 
@@ -52,17 +52,14 @@ def save_datasets(store, eptm, grp=None):
     -------
     the store object
     """
-    if grp:
-        root = zarr.group(store)
-        group = root.create_group(grp, overwrite=True)
-
-    with zarr.open(store, mode="w") as store_:
-        store_.attrs.update(filter_settings(eptm.settings))
+    # mode="w" truncates any pre-existing store, so it has to happen once,
+    # before the datasets are appended one group at a time. Each group is
+    # created implicitly by the write below.
+    root = zarr.open_group(store, mode="w")
+    root.attrs.update(filter_settings(eptm.settings))
 
     for key, dset in eptm.datasets.items():
-        if grp:
-            group.create_group(key)
-            key = f"{grp}/{key}"
-        dset.to_xarray().to_zarr(store, group=key, mode="w")
+        path = f"{grp}/{key}" if grp else key
+        dset.to_xarray().to_zarr(store, group=path, mode="a")
 
     return store

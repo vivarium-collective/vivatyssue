@@ -12,9 +12,9 @@ def test_save_datasets():
     sheet = Sheet("test", *three_faces_sheet())
     fh = tempfile.mktemp(suffix=".zarr")
     zarr.save_datasets(fh, sheet)
-    with zr.open(fh) as st:
-        for key in sheet.datasets:
-            assert key in st
+    st = zr.open(fh)
+    for key in sheet.datasets:
+        assert key in st
 
 
 def test_load_datasets():
