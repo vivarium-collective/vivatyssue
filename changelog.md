@@ -2,6 +2,22 @@
 
 ##
 
+## Build & dependencies
+
+- **CGAL is no longer a dependency.** tyssue is now a pure python package: no
+  C++ toolchain, cmake, boost, gmp or mpfr are needed to build or install it,
+  and the build backend moved from `scikit-build-core` to `hatchling`.
+- **Removed** `tyssue.collisions.self_intersections` and the whole
+  `tyssue.collisions.solvers` module (`auto_collisions`, `CollidingBoxes`,
+  `CollidingBoxes2D`, `CollidingBoxes3D`, `solve_sheet_collisions`,
+  `solve_bulk_collisions`). They were built on the CGAL `_collisions`
+  extension. `QSSolver` no longer takes a `with_collisions` argument.
+  Use the pure numpy `tyssue.collisions.intersections` module, which reports
+  self-intersecting, contained and overlapping *faces*, instead.
+- `generation.shapes.spherical_sheet` and `spherical_monolayer` are available
+  again: the CGAL `make_spherical` point generator was replaced by a numpy
+  Fibonacci-spiral one, `generation.shapes.make_spherical`.
+
 ## Core
 
 - Set an `"id"` column by default

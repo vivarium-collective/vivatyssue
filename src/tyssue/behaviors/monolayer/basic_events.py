@@ -4,8 +4,10 @@ Small event module
 
 
 """
+from ...geometry.bulk_geometry import MonolayerGeometry
+from ...topology.monolayer_topology import cell_division
 from ...utils.decorators import cell_lookup
-from .actions import contract
+from .actions import contract, grow
 
 default_contraction_spec = {
     "cell_id": -1,
@@ -56,3 +58,67 @@ def contraction(monolayer, manager, **kwargs):
             contraction_spec["multiple"],
             contraction_spec["contraction_column"],
         )
+
+
+default_division_spec = {
+    "cell_id": -1,
+    "cell": -1,
+    "growth_rate": 0.1,
+    "critical_vol": 2.0,
+    "orientation": "vertical",
+    "geom": MonolayerGeometry,
+}
+
+
+@cell_lookup
+def division(monolayer, manager, **kwargs):
+    """Cell division happens through cell growth up to a critical volume,
+    followed by actual division of the cell.
+
+    This is the bulk / monolayer analogue of
+    :func:`tyssue.behaviors.sheet.basic_events.division`. Growth acts on the
+    cell's ``prefered_vol`` (the reference volume of the
+    :class:`~tyssue.dynamics.effectors.Volume_Elasticity` effector), just as
+    the sheet behavior grows the reference area of the ``Area_Elasticity``
+    effector. Division is triggered once the measured volume reaches a
+    critical volume, the volumetric counterpart of the ``critical_area``
+    threshold used by the area-based behaviors.
+
+    Parameters
+    ----------
+    monolayer : a :class:`Monolayer` (or bulk :class:`Epithelium`) object
+    manager : an :class:`EventManager` instance
+    cell_id : int
+        index of the mother cell
+    growth_rate : float, default 0.1
+        rate of increase of the prefered volume (see
+        :func:`tyssue.behaviors.monolayer.actions.grow`)
+    critical_vol : float, default 2.
+        volume, in units of the cell's ``prefered_vol``, at which the cell
+        stops growing and divides
+    orientation : {"vertical", "horizontal", "apical"}, default "vertical"
+        orientation of the division plane, passed to
+        :func:`tyssue.topology.monolayer_topology.cell_division`
+    geom : a geometry class, default
+        :class:`~tyssue.geometry.bulk_geometry.MonolayerGeometry`
+        used to refresh the geometry after division
+
+    """
+    division_spec = default_division_spec.copy()
+    division_spec.update(**kwargs)
+
+    cell = division_spec["cell"]
+
+    critical_vol = (
+        division_spec["critical_vol"] * monolayer.specs["cell"]["prefered_vol"]
+    )
+
+    if monolayer.cell_df.loc[cell, "vol"] < critical_vol:
+        grow(monolayer, cell, division_spec["growth_rate"])
+        manager.append(division, **division_spec)
+    else:
+        daughter = cell_division(
+            monolayer, cell, orientation=division_spec["orientation"]
+        )
+        monolayer.cell_df.loc[daughter, "id"] = monolayer.cell_df.id.max() + 1
+        division_spec["geom"].update_all(monolayer)

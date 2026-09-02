@@ -36,9 +36,8 @@ def remove_cell(eptm, cell):
     new_vert = eptm.vert_df.index[-1]
 
     eptm.vert_df.loc[new_vert, "segment"] = "basal"
-    eptm.edge_df.replace(
-        {"srce": verts.index, "trgt": verts.index}, new_vert, inplace=True
-    )
+    for co in ("srce", "trgt"):
+        eptm.edge_df.loc[eptm.edge_df[co].isin(verts.index), co] = new_vert
 
     collapsed = eptm.edge_df.query("srce == trgt")
 
@@ -111,7 +110,7 @@ def split_vert(eptm, vert, face=None, multiplier=1.5, recenter=False):
         (eptm.edge_df["trgt"] == vert) | (eptm.edge_df["srce"] == vert)
     ]
 
-    faces = all_edges.groupby("face").apply(
+    faces = all_edges.groupby("face")[["srce", "trgt", "cell"]].apply(
         lambda df: pd.Series(
             {
                 "verts": frozenset(df[["srce", "trgt"]].values.ravel()),
@@ -120,7 +119,7 @@ def split_vert(eptm, vert, face=None, multiplier=1.5, recenter=False):
         )
     )
 
-    cells = all_edges.groupby("cell").apply(
+    cells = all_edges.groupby("cell")[["srce", "trgt", "face"]].apply(
         lambda df: pd.Series(
             {
                 "verts": frozenset(df[["srce", "trgt"]].values.ravel()),
@@ -200,7 +199,7 @@ def _OH_transition(eptm, all_edges, elements, multiplier=1.5, recenter=False):
     # all_cell_edges = eptm.edge_df.query(f'cell == {cell}').copy()
     cell_edges = all_edges.query(f"cell == {cell}").copy()
 
-    face_verts = cell_edges.groupby("face").apply(
+    face_verts = cell_edges.groupby("face")[["srce", "trgt"]].apply(
         lambda df: set(df["srce"]).union(df["trgt"]) - {vert}
     )
 
@@ -450,8 +449,11 @@ def find_IHs(eptm, shorts=None):
     if not shorts.shape[0]:
         return []
 
-    edges_IH = shorts.groupby("srce").apply(
-        lambda df: pd.Series(
+    def _short_edge(grp):
+        # `srce` is the grouping column, so it is not passed in; re-add it from
+        # the group key (see get_valid() for the same idiom).
+        df = grp.assign(srce=grp.name)
+        return pd.Series(
             {
                 "edge": df.index[0],
                 "length": df["length"].iloc[0],
@@ -459,7 +461,8 @@ def find_IHs(eptm, shorts=None):
                 "pair": frozenset(df.iloc[0][["srce", "trgt"]]),
             }
         )
-    )
+
+    edges_IH = shorts.groupby("srce")[["trgt", "length", "face"]].apply(_short_edge)
     # keep only one of the edges per vertex pair and sort by length
     edges_IH = (
         edges_IH[edges_IH["num_sides"] > 3]
@@ -476,7 +479,7 @@ def find_HIs(eptm, shorts=None):
     if not shorts.shape[0]:
         return []
 
-    max_f_length = shorts.groupby("face")["length"].apply(max)
+    max_f_length = shorts.groupby("face")["length"].max()
     short_faces = eptm.face_df.loc[max_f_length[max_f_length < l_th].index]
     faces_HI = short_faces[short_faces["num_sides"] == 3].sort_values("area").index
     return faces_HI
@@ -528,7 +531,7 @@ def fix_pinch(eptm):
     This method fixes the issue so we can have a valid epithelium back.
     """
     logger.debug("Fixing pinch")
-    face_v = eptm.edge_df.groupby("face").apply(lambda df: frozenset(df["srce"]))
+    face_v = eptm.edge_df.groupby("face")["srce"].apply(frozenset)
     face_v2 = pd.Series(data=face_v.index, index=face_v.values)
     grouped = face_v2.groupby(level=0)
     cardinal = grouped.apply(len)
@@ -729,7 +732,8 @@ def fuse_lateral_faces(eptm, face_g, face_f, validate=True):
         eptm.vert_df.loc[v_keep, eptm.coords] = (
             eptm.vert_df.loc[[v_keep, v_drop], eptm.coords].mean(axis=0).to_numpy()
         )
-        eptm.edge_df.replace({"srce": v_drop, "trgt": v_drop}, v_keep, inplace=True)
+        for co in ("srce", "trgt"):
+            eptm.edge_df.loc[eptm.edge_df[co] == v_drop, co] = v_keep
         eptm.vert_df.drop(v_drop, axis=0, inplace=True)
 
     degenerate = eptm.edge_df.query("srce == trgt")

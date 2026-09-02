@@ -30,14 +30,17 @@ def merge_vertices(sheet):
 
     """
     d_min = sheet.settings.get("threshold_length", 1e-3)
-    short = sheet.edge_df[sheet.edge_df["length"] < d_min].index.to_numpy()
+    # copy=True: pandas 3 hands back a read-only array, which shuffle rejects
+    short = sheet.edge_df[sheet.edge_df["length"] < d_min].index.to_numpy(copy=True)
     np.random.shuffle(short)
     if not short.shape[0]:
         return -1
     logger.info(f"Collapsing {short.shape[0]} edges")
     while short.shape[0]:
         collapse_edge(sheet, short[0], allow_two_sided=False)
-        short = sheet.edge_df[sheet.edge_df["length"] < d_min].index.to_numpy()
+        short = sheet.edge_df[sheet.edge_df["length"] < d_min].index.to_numpy(
+            copy=True
+        )
         np.random.shuffle(short)
 
     sheet.network_changed = True
@@ -206,6 +209,11 @@ def ab_pull(sheet, face, radial_tension, distributed=False):
     verts = sheet.edge_df[sheet.edge_df["face"] == face]["srce"].unique()
     if distributed:
         radial_tension = radial_tension / len(verts)
+
+    # Tension is continuous; an integer column (from e.g. a `= 0` default set
+    # by hand) cannot hold the increment and raises in future pandas.
+    if sheet.vert_df["radial_tension"].dtype.kind in "iub":
+        sheet.vert_df["radial_tension"] = sheet.vert_df["radial_tension"].astype(float)
 
     sheet.vert_df.loc[verts, "radial_tension"] += radial_tension
 

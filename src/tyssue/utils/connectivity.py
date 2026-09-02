@@ -21,7 +21,7 @@ def edge_in_face_connectivity(eptm):
     C_ij = 1 iff edges i and j belong to the same face.
 
     """
-    mesh = eptm.edge_df.groupby("face").apply(_index_mesh)
+    mesh = eptm.edge_df.groupby("face")[["srce"]].apply(_index_mesh)
     ef_connect = sparse.coo_matrix(
         (np.ones(mesh.shape[0]), (mesh["row"], mesh["col"])),
         shape=(eptm.Ne, eptm.Ne),
@@ -43,7 +43,7 @@ def face_face_connectivity(eptm, exclude_opposites=False):
         resulting connectivity matrix
 
     """
-    mesh = eptm.edge_df.groupby("srce").apply(_elements_mesh, "face", "face")
+    mesh = eptm.edge_df.groupby("srce")[["face"]].apply(_elements_mesh, "face", "face")
 
     ff_connect = sparse.coo_matrix(
         (np.ones(mesh.shape[0]), (mesh["row"], mesh["col"])),
@@ -65,7 +65,7 @@ def cell_cell_connectivity(eptm):
     between the cells i and j.
 
     """
-    mesh = eptm.edge_df.groupby("srce").apply(_elements_mesh, "cell", "cell")
+    mesh = eptm.edge_df.groupby("srce")[["cell"]].apply(_elements_mesh, "cell", "cell")
 
     cc_connect = sparse.coo_matrix(
         (np.ones(mesh.shape[0]), (mesh["row"], mesh["col"])),
@@ -96,7 +96,7 @@ def verts_in_face_connectivity(eptm):
     C_ij = n, where n is the number of shared faces
     between the vertices i and j.
     """
-    mesh = eptm.edge_df.groupby("face").apply(_elements_mesh, "srce", "srce")
+    mesh = eptm.edge_df.groupby("face")[["srce"]].apply(_elements_mesh, "srce", "srce")
 
     fst_connect = sparse.coo_matrix(
         (np.ones(mesh.shape[0]), (mesh["row"], mesh["col"])),
@@ -112,7 +112,7 @@ def verts_in_cell_connectivity(eptm):
     C_ij = n, where n is the number of shared cells
     between the vertices i and j.
     """
-    mesh = eptm.edge_df.groupby("cell").apply(_elements_mesh, "srce", "srce")
+    mesh = eptm.edge_df.groupby("cell")[["srce"]].apply(_elements_mesh, "srce", "srce")
 
     cst_connect = sparse.coo_matrix(
         (np.ones(mesh.shape[0]), (mesh["row"], mesh["col"])),

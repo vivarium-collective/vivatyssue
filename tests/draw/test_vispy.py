@@ -1,14 +1,20 @@
 import numpy as np
 import pandas as pd
 import pytest
+import vispy
 from vispy.testing import IS_CI
+
+if IS_CI:
+    pytest.skip("No qt in CI", allow_module_level=True)
+
+try:
+    vispy.use()
+except Exception:
+    pytest.skip("No usable vispy backend", allow_module_level=True)
 
 from tyssue import Sheet, SheetGeometry
 from tyssue.draw.vispy_draw import sheet_view
 from tyssue.generation import three_faces_sheet
-
-if IS_CI:
-    pytest.skip("No qt in CI", allow_module_level=True)
 
 
 def test_sheet_view():

@@ -23,7 +23,9 @@ def to_mesh(sheet):
         ('line', sheet.edge_df[["srce", "trgt"]].to_numpy())
     ]
     for n, edges in sheet.edge_df.groupby("f_sides"):
-        polys = np.vstack(edges.groupby("face").apply(lambda e: e["srce"].values).values)
+        polys = np.vstack(
+            edges.groupby("face")["srce"].apply(lambda s: s.values).values
+        )
         cells.append((cell_types[n], polys))
     mesh = meshio.Mesh(points=sheet.vert_df[sheet.coords].to_numpy(), cells=cells)
     return mesh

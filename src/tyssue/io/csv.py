@@ -22,8 +22,5 @@ def write_storm_csv(
     elif split_by in points.columns():
         storm_points[split_by] = points[split_by]
         # separated files by the column split_by
-        storm_points.groupby(split_by).apply(
-            lambda df: df.to_csv(
-                "{}_{}.csv".format(filename, df[split_by].iloc[0]), **csv_args
-            )
-        )
+        for key, group in storm_points.groupby(split_by):
+            group.to_csv("{}_{}.csv".format(filename, key), **csv_args)

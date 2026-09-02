@@ -473,8 +473,8 @@ def test_orbits():
     datasets = extrude(datasets_2d)
     eptm = Epithelium("3faces_3D", datasets)
 
-    expected_res_cell = datasets["edge"].groupby("srce").apply(lambda df: df["cell"])
-    expected_res_face = datasets["edge"].groupby("face").apply(lambda df: df["trgt"])
+    expected_res_cell = datasets["edge"].groupby("srce")["cell"].apply(lambda s: s)
+    expected_res_face = datasets["edge"].groupby("face")["trgt"].apply(lambda s: s)
     assert_array_equal(expected_res_cell, eptm.get_orbits("srce", "cell"))
     assert_array_equal(expected_res_face, eptm.get_orbits("face", "trgt"))
 
@@ -1083,7 +1083,7 @@ def test_get_force_inference():
     sheet.reset_topo()
     sheet.face_df["area_elasticity"] = 1
     sheet.face_df["prefered_area"] = 1
-    solver = QSSolver(with_t1=False, with_t3=False, with_collisions=False)
+    solver = QSSolver(with_t1=False, with_t3=False)
     solver.find_energy_min(sheet, PlanarGeometry, model, options={"gtol": 1e-8})
 
     sheet.vert_df.y *= 0.5

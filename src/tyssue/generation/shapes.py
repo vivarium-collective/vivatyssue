@@ -20,16 +20,6 @@ from ..geometry.sheet_geometry import (
 from ..geometry.utils import update_spherical
 from ..topology import type1_transition
 from .from_voronoi import from_3d_voronoi
-
-# from .._mesh_generation import make_spherical
-
-# except ImportError:
-#     print(
-#         "CGAL-based mesh generation utilities not found, you may need to install"
-#         " CGAL and build from source"
-#     )
-#     make_sphertical = None
-
 from ..utils import single_cell, swap_apico_basal
 from .modifiers import extrude
 
@@ -380,43 +370,74 @@ def ellipsoid_sheet(a, b, c, n_zs, **kwargs):
     return eptm
 
 
-# def spherical_sheet(radius, Nf, Lloyd_relax=False, **kwargs):
-#     """Returns a spherical sheet with the given radius and (approximately)
-#     the given number of cells
-#     """
-#
-#     centers = np.array(make_spherical(Nf))
-#     eptm = sheet_from_cell_centers(centers, **kwargs)
-#
-#     rhos = (eptm.vert_df[eptm.coords] ** 2).sum(axis=1).mean()
-#     ClosedSheetGeometry.scale(eptm, radius / rhos, eptm.coords)
-#
-#     ClosedSheetGeometry.update_all(eptm)
-#     if Lloyd_relax:
-#         eptm = Lloyd_relaxation(
-#             eptm, ClosedSheetGeometry, steps=100, update_method=update_on_sphere
-#         )
-#
-#     return eptm
+def make_spherical(n_points):
+    """Returns ``n_points`` points spread over the unit sphere.
+
+    The points are placed on a Fibonacci (golden angle) spiral: heights are
+    spaced evenly in ``z``, which gives equal-area bands, and each successive
+    point is rotated by the golden angle so that no band ever lines up with
+    another. This is a near-uniform sampling with no pole clustering, which is
+    what the cell centers of a spherical tissue need.
+
+    Parameters
+    ----------
+    n_points : int
+        the number of points to generate
+
+    Returns
+    -------
+    points : np.ndarray of shape (n_points, 3)
+        the points coordinates, on the unit sphere
+    """
+    n_points = int(n_points)
+    if n_points < 1:
+        raise ValueError("n_points must be a strictly positive integer")
+
+    indices = np.arange(n_points)
+    # z evenly spaced in (-1, 1), offset by half a step to avoid the poles
+    z = 1 - 2 * (indices + 0.5) / n_points
+    rho = np.sqrt(np.maximum(1 - z**2, 0))
+    theta = np.pi * (1 + 5**0.5) * indices
+    return np.column_stack([rho * np.cos(theta), rho * np.sin(theta), z])
 
 
-# def spherical_monolayer(R_in, R_out, Nc, apical="out", Lloyd_relax=False):
-#     """Returns a spherical monolayer with the given inner and
-#     outer radii, and approximately the gieven number of cells.
-#
-#     The `apical` argument can be 'in' out 'out' to specify wether
-#     the apical face of the cells faces inward or outward, reespectively.
-#     """
-#     sheet = spherical_sheet(R_in, Nc, Lloyd_relax=Lloyd_relax)
-#     delta_R = R_out - R_in
-#     mono = Monolayer("mono", extrude(sheet.datasets, method="normals", scale=-delta_R))
-#     if apical == "out":
-#         swap_apico_basal(mono)
-#     else:
-#         mono.settings["lumen_side"] = "apical"
-#
-#     ClosedMonolayerGeometry.update_all(mono)
-#     return mono
+def spherical_sheet(radius, Nf, Lloyd_relax=False, **kwargs):
+    """Returns a spherical sheet with the given radius and (approximately)
+    the given number of cells
+    """
+
+    centers = np.array(make_spherical(Nf))
+    eptm = sheet_from_cell_centers(centers, **kwargs)
+
+    rhos = (eptm.vert_df[eptm.coords] ** 2).sum(axis=1).mean()
+    ClosedSheetGeometry.scale(eptm, radius / rhos, eptm.coords)
+
+    ClosedSheetGeometry.update_all(eptm)
+    if Lloyd_relax:
+        eptm = Lloyd_relaxation(
+            eptm, ClosedSheetGeometry, steps=100, update_method=update_on_sphere
+        )
+
+    return eptm
+
+
+def spherical_monolayer(R_in, R_out, Nc, apical="out", Lloyd_relax=False):
+    """Returns a spherical monolayer with the given inner and
+    outer radii, and approximately the gieven number of cells.
+
+    The `apical` argument can be 'in' out 'out' to specify wether
+    the apical face of the cells faces inward or outward, reespectively.
+    """
+    sheet = spherical_sheet(R_in, Nc, Lloyd_relax=Lloyd_relax)
+    delta_R = R_out - R_in
+    mono = Monolayer("mono", extrude(sheet.datasets, method="normals", scale=-delta_R))
+    if apical == "out":
+        swap_apico_basal(mono)
+    else:
+        mono.settings["lumen_side"] = "apical"
+
+    ClosedMonolayerGeometry.update_all(mono)
+    return mono
 
 
 def sheet_from_cell_centers(points, noise=0, interp_s=1e-4):

@@ -1,28 +1,13 @@
 tyssue.collisions package
 =========================
 
-Subpackages
------------
-
-.. toctree::
-
-    tyssue.collisions.cpp
-
 Submodules
 ----------
 
-tyssue.collisions.intersection module
--------------------------------------
+tyssue.collisions.intersections module
+--------------------------------------
 
-.. automodule:: tyssue.collisions.intersection
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-tyssue.collisions.solvers module
---------------------------------
-
-.. automodule:: tyssue.collisions.solvers
+.. automodule:: tyssue.collisions.intersections
     :members:
     :undoc-members:
     :show-inheritance:

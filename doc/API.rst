@@ -230,21 +230,10 @@ Predefined datasets
    :undoc-members:
 
 
-Collision detection and correction
-==================================
+Intersection detection
+======================
 
-Detection
----------
-
-.. automodule:: tyssue.collisions.intersection
-   :members:
-   :undoc-members:
-
-
-Resolution
-----------
-
-.. automodule:: tyssue.collisions.solvers
+.. automodule:: tyssue.collisions.intersections
    :members:
    :undoc-members:
 

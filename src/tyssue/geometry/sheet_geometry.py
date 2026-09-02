@@ -27,7 +27,7 @@ class SheetGeometry(PlanarGeometry):
         cls.update_ucoords(sheet)
         cls.update_length(sheet)
         cls.update_centroid(sheet)
-        # cls.update_height(sheet)
+        cls.update_height(sheet)
         cls.update_normals(sheet)
         cls.update_areas(sheet)
         cls.update_perimeters(sheet)
@@ -124,19 +124,41 @@ class SheetGeometry(PlanarGeometry):
 
         sheet.vert_df["height"] = sheet.vert_df["rho"] - sheet.vert_df["basal_shift"]
 
-        edge_height = sheet.upcast_srce(sheet.vert_df[["height", "rho"]])
-        edge_height.set_index(sheet.edge_df["face"], append=True, inplace=True)
-        sheet.face_df[["height", "rho"]] = edge_height.mean(level="face")
+        # Face-level mean of the source vertices' height/rho. Equivalent to
+        #     upcast_srce(...).groupby(face).mean()
+        # but done with bincount: the groupby builds an Ne x 2 intermediate frame
+        # and dominated update_height (0.717 ms of 0.761 ms on a 704-face crypt),
+        # which matters because update_height is per-step for every backend.
+        # Faces carrying no edge get NaN, exactly as the groupby's reindex did.
+        srce_pos = sheet.vert_df.index.get_indexer(sheet.edge_df["srce"])
+        face_pos = sheet.face_df.index.get_indexer(sheet.edge_df["face"])
+        counts = np.bincount(face_pos, minlength=sheet.face_df.shape[0])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            for col in ("height", "rho"):
+                totals = np.bincount(
+                    face_pos,
+                    weights=sheet.vert_df[col].to_numpy()[srce_pos],
+                    minlength=sheet.face_df.shape[0],
+                )
+                sheet.face_df[col] = np.where(counts > 0, totals / counts, np.nan)
 
     @staticmethod
     def update_boundary_index(sheet):
-    # Reset boundary flags
+        """Updates the vert_df, edge_df and face_df dataframes with a 'boundary'
+        column that takes values 0 and 1, with 1 denoting that a vertex, edge or
+        face lies on the tissue boundary, and 0 when it does not.
+
+        """
+        # Reset boundary flags
         sheet.vert_df['boundary'] = 0
         sheet.edge_df['boundary'] = 0
         sheet.face_df['boundary'] = 0
 
-        # Update opposite edges
-        sheet.get_opposite()
+        # Update opposite edges. Imported here rather than at module level:
+        # core.objects imports this module, so a top-level import would cycle.
+        from ..core.sheet import get_opposite
+
+        sheet.edge_df["opposite"] = get_opposite(sheet.edge_df)
 
         # Identify boundary edges
         boundary_edges = sheet.edge_df['opposite'] == -1
@@ -296,7 +318,7 @@ class SheetGeometry(PlanarGeometry):
                             else 'face' Return the (sheet.Nf, 3, 3)
 
         """
-        svd_rot = sheet.edge_df.groupby("face").apply(face_svd_)
+        svd_rot = sheet.edge_df.groupby("face")[["rx", "ry", "rz"]].apply(face_svd_)
         svd_rot = np.concatenate(svd_rot).reshape((-1, 3, 3))
         if output_as == "edge":
             svd_rot = svd_rot.take(sheet.edge_df["face"], axis=0)
@@ -322,25 +344,6 @@ class SheetGeometry(PlanarGeometry):
         else:
             rotated = np.einsum("ikj, ik -> ij", rots, rel_srce_pos)
         return np.arctan2(rotated[:, 1], rotated[:, 0])
-
-    @staticmethod
-    def update_boundary_index(sheet):
-        """Updates the vert_df and edge_df dataframes with a 'boundary' column
-        that takes values 0 and 1 with 1 denoting that an edge or vertex lies
-        on the tissue boundary, and 0 when it does not.
-
-        """
-
-        sheet.vert_df['boundary'] = 0
-        sheet.edge_df['boundary'] = 0
-
-        sheet.get_opposite()
-
-        sheet.edge_df.loc[sheet.edge_df['opposite'] == -1, 'boundary'] = 1
-        boundary_verts = sheet.edge_df.loc[sheet.edge_df['opposite'] == -1, 'trgt'].to_numpy()
-
-        sheet.vert_df.loc[boundary_verts, "boundary"] = 1
-
 
 class ClosedSheetGeometry(SheetGeometry):
     """Geometry for a closed 2.5D sheet.
@@ -423,7 +426,7 @@ class WeightedPerimeterEllipsoidLameGeometry(ClosedSheetGeometry):
         """
         sheet.edge_df["num_sides"] = sheet.upcast_face("num_sides")
         sheet.edge_df["weight"] = (
-            sheet.edge_df.groupby("face")
+            sheet.edge_df.groupby("face")[["num_sides", "weight"]]
             .apply(lambda df: (df["num_sides"] * df["weight"] / df["weight"].sum()))
             .sort_index(level=1)
             .to_numpy()

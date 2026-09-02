@@ -45,7 +45,7 @@ class CylinderGeometryInit(SheetGeometry):
     def update_face_tangents(sheet):
 
         face_coords = sheet.face_df[sheet.coords]
-        face_coords["z"] = 0
+        face_coords["z"] = 0.0
         face_coords = sheet.face_df[sheet.coords].values
         normal = np.column_stack((np.zeros(sheet.Nf), np.zeros(sheet.Nf), np.ones(sheet.Nf)))
 

@@ -14,6 +14,17 @@ from .sheet import Sheet
 logger = logging.getLogger(name=__name__)
 
 
+def _time_key(time):
+    """The `dicts` key for a time point.
+
+    Keys are stringified floats, so `record(1)` and `retrieve(1.0)` agree. Accepts
+    either a number or a recorded frame, in which case the time is read from it.
+    """
+    if isinstance(time, pd.DataFrame):
+        time = time["time"].iloc[0] if "time" in time.columns and len(time) else 0.0
+    return f"{float(time)}"
+
+
 def _filter_columns(cols_hist, cols_in, element):
     if not set(cols_hist).issubset(cols_in):
         warnings.warn(
@@ -62,12 +73,12 @@ class History:
             warnings.warn(
                 "extra_cols and save_all parameters are deprecated. Use save_only instead. ")
 
-        extra_cols = {
-            k: list(sheet.datasets[k].columns) for k in sheet.datasets
-        }
-
         if save_only is not None:
-            extra_cols = defaultdict(list, **extra_cols)
+            extra_cols = defaultdict(list, **save_only)
+        else:
+            extra_cols = {
+                k: list(sheet.datasets[k].columns) for k in sheet.datasets
+            }
 
         self.sheet = sheet
 
@@ -79,7 +90,6 @@ class History:
         else:
             self.save_every = None
 
-        self.datasets = {}
         self.dicts = {}
         self.columns = {}
         vcols = sheet.coords + extra_cols["vert"]
@@ -87,18 +97,16 @@ class History:
         self.vcols = _filter_columns(vcols, sheet.vert_df.columns, "vertex")
         _vert_h = sheet.vert_df[self.vcols].reset_index(drop=False)
         if not "time" in self.vcols:
-            _vert_h["time"] = 0
-        self.datasets["vert"] = _vert_h
-        self.dicts["vert"] = {}
+            _vert_h["time"] = 0.0
+        self.dicts["vert"] = {_time_key(_vert_h): _vert_h}
         self.columns["vert"] = self.vcols
 
         fcols = extra_cols["face"]
         self.fcols = _filter_columns(fcols, sheet.face_df.columns, "face")
         _face_h = sheet.face_df[self.fcols].reset_index(drop=False)
         if not "time" in self.fcols:
-            _face_h["time"] = 0
-        self.datasets["face"] = _face_h
-        self.dicts["face"] = {}
+            _face_h["time"] = 0.0
+        self.dicts["face"] = {_time_key(_face_h): _face_h}
         self.columns["face"] = self.fcols
 
         if sheet.cell_df is not None:
@@ -106,9 +114,8 @@ class History:
             self.ccols = _filter_columns(ccols, sheet.cell_df.columns, "cell")
             _cell_h = sheet.cell_df[self.ccols].reset_index(drop=False)
             if not "time" in self.ccols:
-                _cell_h["time"] = 0
-            self.datasets["cell"] = _cell_h
-            self.dicts["cell"] = {}
+                _cell_h["time"] = 0.0
+            self.dicts["cell"] = {_time_key(_cell_h): _cell_h}
             self.columns["cell"] = self.ccols
             extra_cols["edge"].append("cell")
 
@@ -117,10 +124,25 @@ class History:
         self.ecols = _filter_columns(ecols, sheet.edge_df.columns, "edge")
         _edge_h = sheet.edge_df[self.ecols].reset_index(drop=False)
         if not "time" in self.ecols:
-            _edge_h["time"] = 0
-        self.datasets["edge"] = _edge_h
-        self.dicts["edge"] = {}
+            _edge_h["time"] = 0.0
+        self.dicts["edge"] = {_time_key(_edge_h): _edge_h}
         self.columns["edge"] = self.ecols
+
+    @property
+    def datasets(self):
+        """The whole recorded history, one concatenated frame per element.
+
+        Rebuilt from `self.dicts` on every access. `dicts` is the store; this is a
+        convenience view for callers that want the full time series in one frame,
+        and is the only place a concatenation happens.
+        """
+        return {
+            element: self._concat(element) for element in self.dicts
+        }
+
+    def _concat(self, element):
+        """Concatenates every recorded time point of `element` into one frame."""
+        return pd.concat(self.dicts[element].values(), ignore_index=True)
 
     def __len__(self):
         return self.time_stamps.__len__()
@@ -133,31 +155,32 @@ class History:
 
         """
         with pd.HDFStore(hf5file, "a") as store:
-            for key, df in self.datasets.items():
-                kwargs = {"data_columns": ["time"]}
-                if "segment" in df.columns:
-                    kwargs["min_itemsize"] = {"segment": 7}
-                store.append(key=key, value=df, **kwargs)
+            for key, records in self.dicts.items():
+                for df in records.values():
+                    kwargs = {"data_columns": ["time"]}
+                    if "segment" in df.columns:
+                        kwargs["min_itemsize"] = {"segment": 7}
+                    store.append(key=key, value=df, **kwargs)
 
     @property
     def time_stamps(self):
-        return self.datasets["vert"]["time"].unique()
+        return np.array(sorted(float(key) for key in self.dicts["vert"]))
 
     @property
     def vert_h(self):
-        return self.datasets["vert"]
+        return self._concat("vert")
 
     @property
     def edge_h(self):
-        return self.datasets["edge"]
+        return self._concat("edge")
 
     @property
     def face_h(self):
-        return self.datasets["face"]
+        return self._concat("face")
 
     @property
     def cell_h(self):
-        return self.datasets.get("cell", None)
+        return self._concat("cell") if "cell" in self.dicts else None
 
     def record(self, time_stamp=None):
         """Appends a copy of the sheet datasets to the history instance.
@@ -168,36 +191,29 @@ class History:
         """
 
         if time_stamp is not None:
-            self.time = time_stamp
+            self.time = float(time_stamp)
         else:
-            self.time += 1
+            self.time += 1.0
 
         if (self.save_every is None) or (
                 self.index % (int(self.save_every / self.dt)) == 0
         ):
-            for element in self.datasets:
-                hist = self.datasets[element]
+            for element in self.dicts:
                 cols = self.columns[element]
                 df = self.sheet.datasets[element][cols].reset_index(drop=False)
-                # if "time" not in cols:
-                #     times = pd.Series(np.ones((df.shape[0],)) * self.time, name="time")
-                #     df = pd.concat([df, times], ignore_index=False, axis=1, sort=False)
-                # else:
                 df["time"] = self.time
-
-                # if self.time in hist["time"]:
-                #     # erase previously recorded time point
-                #     hist = hist[hist["time"] != self.time]
-
-                self.dicts[element].update({f"{self.time}": df})
+                # recording twice at the same time stamp replaces the earlier record
+                self.dicts[element][_time_key(self.time)] = df
 
         self.index += 1
 
     def update_datasets(self):
-        """Concatenate all datasets in self.datasets into self.datasets as pd.DataFrame objects
+        """Deprecated: `datasets` is now rebuilt from `dicts` on access.
+
+        Kept so existing code that called this after a simulation keeps working;
+        it is no longer necessary.
         """
-        for element in self.sheet.datasets:
-            self.datasets[element] = pd.concat(self.dicts[element].values(), ignore_index=True)
+        return self.datasets
 
     def retrieve(self, time):
         """Return datasets at time `time`.
@@ -205,7 +221,7 @@ class History:
         If a specific dataset was not recorded at time time,
         the closest record before that time is used.
         """
-        times = [float(_time) for _time in self.dicts["vert"].keys()]
+        times = self.time_stamps
 
         if time > max(times):
             warnings.warn(
@@ -216,8 +232,8 @@ are you sure you passed the time stamp as parameter, and not an index ?
             )
         t = times[np.argmin([np.abs(t1 - time) for t1 in times])]
         sheet_datasets = {}
-        for element in self.datasets:
-            df = self.dicts[element][f"{t}"]
+        for element in self.dicts:
+            df = self.dicts[element][_time_key(t)]
             cols = self.columns[element]
             df = df.set_index(element)[cols]
             sheet_datasets[element] = df
@@ -402,7 +418,7 @@ class HistoryHdf5(History):
             self.sheet = sheet
 
         if time_stamp is not None:
-            self.time = time_stamp
+            self.time = float(time_stamp)
         else:
             self.time += 1.0
 
@@ -465,7 +481,7 @@ class HistoryHdf5(History):
         time = times[np.argmin(np.abs(times - time))]
         with pd.HDFStore(self.hf5file, "r") as store:
             sheet_datasets = {}
-            for element in self.datasets:
+            for element in self.dicts:
                 sheet_datasets[element] = store.select(element, where=f"time == {time}")
 
         sheet = type(self.sheet)(

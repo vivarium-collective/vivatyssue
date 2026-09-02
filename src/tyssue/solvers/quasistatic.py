@@ -8,13 +8,15 @@ import numpy as np
 from scipy import optimize
 
 from .. import config
-from ..collisions import auto_collisions
 from ..topology import auto_t1, auto_t3
 from .base import TopologyChangeError, set_pos
 
 log = logging.getLogger(__name__)
 
 MAX_ITER = 100
+# Smallest period the periodic box is allowed to shrink to, so that the
+# box degree of freedom can never cross its own lower boundary.
+MIN_PERIOD = 1e-2
 
 
 class QSSolver:
@@ -30,14 +32,12 @@ class QSSolver:
       by the model
     """
 
-    def __init__(self, with_collisions=False, with_t1=False, with_t3=False):
+    def __init__(self, with_t1=False, with_t3=False):
         """Creates a quasistatic gradient descent solver with optional
-        type1, type3 and collision detection and solving routines.
+        type1 and type3 transition solving routines.
 
         Parameters
         ----------
-        with_collisions : bool, default False
-            wheter or not to solve collisions
         with_t1 : bool, default False
             whether or not to solve type 1 transitions at each
             iteration.
@@ -47,7 +47,7 @@ class QSSolver:
             iteration.
 
         Those corrections are applied in this order: first the type 1, then the
-        type 3, then the collisions
+        type 3
 
         """
         self.set_pos = set_pos
@@ -55,8 +55,6 @@ class QSSolver:
             self.set_pos = auto_t1(self.set_pos)
         if with_t3:
             self.set_pos = auto_t3(self.set_pos)
-        if with_collisions:
-            self.set_pos = auto_collisions(self.set_pos)
         self.restart = True
         self.rearange = with_t1 or with_t3
         self.res = {"success": False, "message": "Not Started"}
@@ -152,12 +150,21 @@ class QSSolver:
             for u in eptm.settings["boundaries"]:
                 size = eptm.specs["settings"]["boundaries"][u][1]
             pos0 = np.append(pos0, size)
+            # The last degree of freedom is the upper bound shared by every
+            # axis. Left unbounded, the line search can push it past the fixed
+            # lower bounds: the period turns negative, update_periodic_dcoords
+            # wraps the wrong way and the energy landscape becomes meaningless.
+            lowest = max(
+                boundary[0] for boundary in eptm.settings["boundaries"].values()
+            )
+            bounds = [(None, None)] * (pos0.size - 1) + [(lowest + MIN_PERIOD, None)]
             try:
                 self.res = optimize.minimize(
                     self._opt_energy_pbc,
                     pos0,
                     args=(eptm, geom, model),
                     jac=self._opt_grad_pbc,
+                    bounds=bounds,
                     **kwargs
                 )
                 return self.res

@@ -122,7 +122,9 @@ def from_2d_voronoi(voro, specs=None):
             fv1 = voro.vertices[rv1]
             edge_v = fv1 - fv0
             fto0 = fv0 - f_center
-            normal = np.cross(fto0, edge_v)
+            # z component of the 2D cross product (np.cross on 2-vectors
+            # is deprecated in NumPy 2)
+            normal = fto0[0] * edge_v[1] - fto0[1] * edge_v[0]
             if np.sign(normal) > 0:
                 el_idx.append([rv0, rv1, rp[0]])
             else:

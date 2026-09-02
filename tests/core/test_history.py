@@ -345,14 +345,19 @@ def test_to_and_from_archive():
 
     sheet = Sheet("3", *three_faces_sheet())
     history = History(sheet)
-    history.record()
-    history.record()
-    history.record()
+    for i in range(1, 4):
+        sheet.face_df["area"] = 100.0 + i
+        history.record()
     history.to_archive("test.hf5")
     history_h = HistoryHdf5.from_archive("test.hf5")
     sheet_ = history_h.retrieve(2)
     try:
         assert sheet_.Nv == sheet.Nv
+        # the archive must carry every recorded time point, not just the initial
+        # state -- asserting Nv alone passes even when the history is dropped
+        assert list(history_h.time_stamps) == [0.0, 1.0, 2.0, 3.0]
+        assert history_h.retrieve(3).face_df.loc[0, "area"] == 103.0
+        assert history_h.retrieve(1).face_df.loc[0, "area"] == 101.0
     finally:
         os.remove("test.hf5")
 

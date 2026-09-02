@@ -190,8 +190,7 @@ it's time to move on...
 
 ### Core
 
-- CGAL > 4.7
-- Python >= 3.6
+- Python >= 3.10
 - numpy
 - scipy
 - matplotlib
@@ -226,7 +225,7 @@ conda install -c conda-forge tyssue
 
 ### Through PyPi
 
-You can also install tyssue from PyPi, this is a CGAL-less version (pure python), lacking some features:
+tyssue is a pure python package, so the PyPi version is fully featured:
 
 `python -m pip install --user --upgrade tyssue`
 

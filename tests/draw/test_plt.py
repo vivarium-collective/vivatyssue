@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -29,7 +30,7 @@ class TestsPlt:
         self.sheet.vert_df["rand"] = np.linspace(
             0.0, 1.0, num=self.sheet.vert_df.shape[0]
         )
-        cmap = plt.cm.get_cmap("viridis")
+        cmap = plt.get_cmap("viridis")
         color_cmap = cmap(self.sheet.vert_df.rand)
         self.draw_specs["vert"]["visible"] = True
         self.draw_specs["vert"]["color"] = color_cmap
@@ -125,6 +126,8 @@ class TestsPlt:
 
 
 def test_create_gif():
+    if shutil.which("magick") is None and shutil.which("convert") is None:
+        pytest.skip("imagemagick not available, skipping gif rendering")
     geom = SheetGeometry
     model = PlanarModel
     sheet = Sheet("3", *three_faces_sheet())
