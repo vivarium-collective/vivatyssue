@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -125,6 +126,8 @@ class TestsPlt:
 
 
 def test_create_gif():
+    if shutil.which("magick") is None and shutil.which("convert") is None:
+        pytest.skip("imagemagick not available, skipping gif rendering")
     geom = SheetGeometry
     model = PlanarModel
     sheet = Sheet("3", *three_faces_sheet())
