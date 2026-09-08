@@ -1,5 +1,4 @@
 import os
-import tempfile
 
 import pytest
 
@@ -16,14 +15,16 @@ def test_load_spec():
     assert config["face"]["num_sides"] == 6
 
 
-def test_save_spec():
+def test_save_spec(tmp_path):
+    # NamedTemporaryFile holds an exclusive handle on Windows, so save_spec()
+    # could not reopen the path by name; tmp_path just yields a directory.
     config = load_spec(TESTCONFIG)
-    tmp = tempfile.NamedTemporaryFile()
-    save_spec(config, tmp.name, overwrite=True)
-    saved_config = load_spec(tmp.name)
+    fname = str(tmp_path / "spec.json")
+    save_spec(config, fname, overwrite=True)
+    saved_config = load_spec(fname)
     assert saved_config["face"]["num_sides"] == 6
     with pytest.raises(IOError):
-        save_spec(config, tmp.name, False)
+        save_spec(config, fname, False)
 
 
 def test_default():

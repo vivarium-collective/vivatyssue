@@ -118,27 +118,6 @@ include = [
   "/pyproject.toml",
 ]
 
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = [
-  "-ra",
-  "--showlocals",
-  "--strict-markers",
-  "--strict-config",
-#  "--docker-compose=tests/omero/docker-compose.yml",
- ]
-xfail_strict = true
-filterwarnings = [
-  "error",
-  "ignore::DeprecationWarning",
-  "default::ResourceWarning"
-]
-log_cli_level = "INFO"
-testpaths = [
-  "tests",
-]
-
-
 [tool.mypy]
 files = "src"
 python_version = "3.10"
