@@ -1,5 +1,12 @@
 import logging
 
+# _version.py is written by hatch-vcs at build time and is not tracked in git,
+# so it is absent in a plain source checkout that has never been built.
+try:
+    from ._version import __version__
+except ImportError:  # pragma: no cover
+    __version__ = "0.0.0+unknown"
+
 from .behaviors.event_manager import EventManager  # noqa
 from .core import objects  # noqa
 from .core.history import History, HistoryHdf5  # noqa

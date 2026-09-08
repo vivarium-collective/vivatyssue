@@ -1,5 +1,4 @@
 import os
-import shutil
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -7,7 +6,13 @@ import numpy as np
 import pytest
 
 from tyssue import History, Sheet, SheetGeometry, config
-from tyssue.draw.plt_draw import create_gif, plot_forces, quick_edge_draw, sheet_view
+from tyssue.draw.plt_draw import (
+    create_gif,
+    imagemagick_cmd,
+    plot_forces,
+    quick_edge_draw,
+    sheet_view,
+)
 from tyssue.dynamics import PlanarModel
 from tyssue.generation import three_faces_sheet
 from tyssue.solvers.viscous import EulerSolver
@@ -126,7 +131,7 @@ class TestsPlt:
 
 
 def test_create_gif():
-    if shutil.which("magick") is None and shutil.which("convert") is None:
+    if imagemagick_cmd() is None:
         pytest.skip("imagemagick not available, skipping gif rendering")
     geom = SheetGeometry
     model = PlanarModel

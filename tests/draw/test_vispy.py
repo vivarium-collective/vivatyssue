@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
 import pytest
-import vispy
+
+# vispy ships in the optional `viz` extra; skip rather than fail collection.
+vispy = pytest.importorskip("vispy", reason="vispy not installed (pip install 'tyssue[viz]')")
 from vispy.testing import IS_CI
 
 if IS_CI:

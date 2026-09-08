@@ -1,0 +1,53 @@
+cff-version: 1.2.0
+title: "tyssue: an epithelium simulation library"
+message: >-
+  If you use this software, please cite both the JOSS article
+  (preferred-citation) and the software archive below.
+type: software
+license: GPL-3.0
+repository-code: "https://github.com/vivarium-collective/vivatyssue"
+url: "https://github.com/vivarium-collective/vivatyssue"
+abstract: >-
+  tyssue is a living tissues, cell level, modeling library. This is the
+  maintained continuation of DamCB/tyssue, developed by the
+  vivarium-collective with the agreement of the original maintainers.
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.4817609
+    description: Zenodo archive of the upstream project
+authors:
+  - family-names: Gay
+    given-names: Guillaume
+    email: guillaume@damcb.com
+  - family-names: Theis
+    given-names: Sophie
+  - family-names: Suzanne
+    given-names: Magali
+  - family-names: Caré
+    given-names: Bertrand
+  - family-names: Gay
+    given-names: Cyprien
+  - family-names: Mary
+    given-names: Hadrien
+  - family-names: Molino
+    given-names: François
+  - name: "all tyssue contributors"
+  - family-names: Rahman
+    given-names: Tasnif
+    email: tasnif.rahman@gmail.com
+preferred-citation:
+  type: article
+  title: "Tyssue: an epithelium simulation library"
+  doi: 10.21105/joss.02973
+  journal: "Journal of Open Source Software"
+  year: 2021
+  volume: 6
+  issue: 62
+  start: 2973
+  authors:
+    - family-names: Theis
+      given-names: Sophie
+    - family-names: Suzanne
+      given-names: Magali
+    - family-names: Gay
+      given-names: Guillaume

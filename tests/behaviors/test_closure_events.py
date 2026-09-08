@@ -14,7 +14,6 @@ Each test renders a 3D gif of the recorded history to ``tests/behaviors/output/`
 (requires imagemagick's ``magick``; the rendering step is skipped if it is not
 installed).
 """
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -140,9 +139,10 @@ def _half_verts(mono, cells):
 
 def _render(history, name):
     """Renders a 3D gif of `history`; skips if imagemagick is unavailable."""
-    if shutil.which("magick") is None and shutil.which("convert") is None:
+    from tyssue.draw.plt_draw import create_gif_3d, imagemagick_cmd
+
+    if imagemagick_cmd() is None:
         pytest.skip("imagemagick not available, skipping video rendering")
-    from tyssue.draw.plt_draw import create_gif_3d
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     output = OUTPUT_DIR / name

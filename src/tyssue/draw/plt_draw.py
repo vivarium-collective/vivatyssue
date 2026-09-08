@@ -5,6 +5,7 @@ import logging
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import warnings
 
@@ -23,6 +24,40 @@ import matplotlib.patches as mpatches
 
 from ..config.draw import sheet_spec
 from ..utils.utils import get_sub_eptm, spec_updater
+
+IMAGEMAGICK_INSTALL_HINT = {
+    "darwin": "brew install imagemagick",
+    "win32": "https://imagemagick.org/script/download.php#windows",
+}
+
+
+def imagemagick_cmd():
+    """Return the ImageMagick CLI to use for gif conversion, or None if absent.
+
+    ``convert`` is only accepted off Windows: there, ``convert.exe`` in System32
+    is the built-in FAT-to-NTFS volume utility, so ``shutil.which("convert")``
+    finds an unrelated binary.
+    """
+    magick = shutil.which("magick")  # ImageMagick 7
+    if magick is not None:
+        return magick
+    if sys.platform != "win32":
+        return shutil.which("convert")  # ImageMagick 6
+    return None
+
+
+def _require_imagemagick():
+    """Return the ImageMagick CLI, raising an actionable error if unavailable."""
+    cmd = imagemagick_cmd()
+    if cmd is None:
+        hint = IMAGEMAGICK_INSTALL_HINT.get(sys.platform, "apt install imagemagick")
+        msg = (
+            "ImageMagick is required to write gifs but was not found on PATH. "
+            f"Install it with: {hint}"
+        )
+        raise RuntimeError(msg)
+    return cmd
+
 
 COORDS = ["x", "y"]
 COORDS3D = ["x", "y", "z"]
@@ -168,13 +203,10 @@ def create_gif(
         plt.close(fig)
 
     try:
-        subprocess.run(["magick", (graph_dir / "movie_*.png").as_posix(), output])
-    except Exception as e:
-        print(
-            "Converting didn't work, make sure imagemagick is available on your system"
+        magick = _require_imagemagick()
+        subprocess.run(
+            [magick, (graph_dir / "movie_*.png").as_posix(), output], check=True
         )
-        raise e
-
     finally:
         shutil.rmtree(graph_dir)
 
@@ -306,13 +338,10 @@ def create_gif_3d(
         plt.close(fig)
 
     try:
-        subprocess.run(["magick", (graph_dir / "movie_*.png").as_posix(), output])
-    except Exception as e:
-        print(
-            "Converting didn't work, make sure imagemagick is available on your system"
+        magick = _require_imagemagick()
+        subprocess.run(
+            [magick, (graph_dir / "movie_*.png").as_posix(), output], check=True
         )
-        raise e
-
     finally:
         shutil.rmtree(graph_dir)
 

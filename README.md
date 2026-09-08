@@ -1,36 +1,24 @@
 # tyssue : An epithelium simulation library
 
 
-## [ANN] Working on a 1.0 release
+## About this fork
 
-Dear tyssue user or prospective user, I come with good bearings.
+This is the maintained continuation of [`DamCB/tyssue`](https://github.com/DamCB/tyssue),
+originally created by Guillaume Gay, Sophie Theis, Magali Suzanne and the tyssue
+contributors. It is developed by the
+[vivarium-collective](https://github.com/vivarium-collective) with the upstream
+maintainers' agreement, remains GPL-3.0, and keeps the original author list and
+citation intact.
 
-This commit to the **new default branch `main` is the official start of the 1.0 release. It is long overdue and there is a lot of house keeping.
-
-### Short term
-
-- [X] fix CI w/ github actions
-- [ ] Readthedocs with mkdoc
-- [x] Tests
-- [x] Notebook tests
-- [x] Merge PRs #263 #274
-- [x] Tests
-- [ ] Check Polarization notebooks
-
-
-
-
-
-
-
+Releases are published to PyPI as `tyssue`. Conda packaging is no longer maintained.
 
 ![A nice banner](doc/illus/banner.png)
 
 <hr/>
 
-| Name | Downloads | Version | Platforms |
-| --- | --- | --- | --- |
-| [![Conda Recipe](https://img.shields.io/badge/recipe-tyssue-green.svg)](https://anaconda.org/conda-forge/tyssue) | [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/tyssue.svg)](https://anaconda.org/conda-forge/tyssue) | [![Conda Version](https://img.shields.io/conda/vn/conda-forge/tyssue.svg)](https://anaconda.org/conda-forge/tyssue) | [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/tyssue.svg)](https://anaconda.org/conda-forge/tyssue) |
+| Version | Downloads | Python |
+| --- | --- | --- |
+| [![PyPI version](https://img.shields.io/pypi/v/tyssue.svg)](https://pypi.org/project/tyssue/) | [![PyPI downloads](https://img.shields.io/pypi/dm/tyssue.svg)](https://pypi.org/project/tyssue/) | [![Python versions](https://img.shields.io/pypi/pyversions/tyssue.svg)](https://pypi.org/project/tyssue/) |
 
 | Coverage | Doc | CHAT |
 | --- | --- | --- |
@@ -215,26 +203,42 @@ it's time to move on...
 
 ## Install
 
-You can install the library with the conda package manager
-
+tyssue is a pure python package, installed from PyPI:
 
 ```bash
-conda install -c conda-forge tyssue
+python -m pip install --upgrade tyssue
 ```
 
+### Optional extras
 
-### Through PyPi
+```bash
+python -m pip install "tyssue[viz]"   # ipyvolume, pythreejs, vispy, jupyter — 3D/interactive views
+python -m pip install "tyssue[zarr]"  # zarr + xarray, for tyssue.io.zarr
+```
 
-tyssue is a pure python package, so the PyPi version is fully featured:
+The core install covers simulation and the matplotlib-based drawing in
+`tyssue.draw.plt_draw`. Anything needing a WebGL or Qt canvas lives in `viz`.
 
-`python -m pip install --user --upgrade tyssue`
+### Writing gifs
+
+`create_gif` and `create_gif_3d` shell out to [ImageMagick](https://imagemagick.org),
+a system binary rather than a Python package, so install it separately:
+
+| Platform | Command |
+| --- | --- |
+| macOS | `brew install imagemagick` |
+| Debian/Ubuntu | `sudo apt install imagemagick` |
+| Windows | [installer](https://imagemagick.org/script/download.php#windows) |
+
+Everything else works without it.
 
 ### From source
 
-See [INSTALL.md](INSTALL.md) for a step by step install, including the necessary python environment.
+See [INSTALL.md](INSTALL.md) for a step by step install.
 
 ## How to cite
-If you find `tyssue` useful please cite [this repository](https://github.com/DamCB/tyssue) using its DOI as follows:
+If you find `tyssue` useful please cite the original publication and the
+[upstream repository](https://github.com/DamCB/tyssue) using its DOI as follows:
 
 > Theis, Suzanne, Gay, (2021). Tyssue: an epithelium simulation library. Journal of Open Source Software, 6(62), 2973 doi:[https://doi.org/10.21105/joss.02973](https://doi.org/10.21105/joss.02973)
 >

@@ -1,5 +1,10 @@
 import tempfile
 
+import pytest
+
+# The .OBJ writer is vispy-backed, and vispy ships in the optional `viz` extra.
+pytest.importorskip("vispy", reason="vispy not installed (pip install 'tyssue[viz]')")
+
 from tyssue import Sheet
 from tyssue.generation import three_faces_sheet
 from tyssue.io import obj
