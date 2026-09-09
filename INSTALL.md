@@ -1,48 +1,53 @@
-tyssue is a pure python package. It can be installed with `conda` or `pip`, with no compiler toolchain required.
+tyssue is a pure python package, installed with `pip`. No compiler toolchain is required.
 
-## Installing tyssue with conda
-
-If you have a conda environment ready:
-```
-conda install -c conda-forge tyssue
-```
-
-This will install tyssue and all its dependencies.
+Conda packaging is no longer maintained; the conda-forge `tyssue` package is frozen
+at the last upstream release and does not track this project.
 
 ## Install tyssue using pip
 
 ```sh
-python -m pip install --user --upgrade tyssue
+python -m pip install --upgrade tyssue
 ```
+
+Optional extras:
+
+```sh
+python -m pip install "tyssue[viz]"   # ipyvolume, pythreejs, vispy, jupyter
+python -m pip install "tyssue[zarr]"  # zarr + xarray, for tyssue.io.zarr
+```
+
+## ImageMagick (only for gif export)
+
+`create_gif` and `create_gif_3d` shell out to [ImageMagick](https://imagemagick.org),
+which is a system binary, not a Python package, and so is not installed by pip:
+
+| Platform | Command |
+| --- | --- |
+| macOS | `brew install imagemagick` |
+| Debian/Ubuntu | `sudo apt install imagemagick` |
+| Windows | [installer](https://imagemagick.org/script/download.php#windows) |
 
 ## Installing from source
 
-Those are the instructions to install the package from source. If you
-allready have a basic scientific python stack, use it, don't install
-anaconda.
-
 ### Download and install `tyssue` from source
 
-If you want to do that, I assume you allready know how to manage
-dependencies on your platform. The simplest way to manage dependencies is to use [`conda`](https://docs.conda.io/en/latest/miniconda.html) to manage the dependencies (you can use [`mamba`](https://github.com/mamba-org/mamba) as a faster alternative to conda).
-
-Start by cloning tyssue:
+Clone the repository:
 
 ```bash
-git clone https://github.com/damcb/tyssue.git
-cd tyssue
+git clone https://github.com/vivarium-collective/vivatyssue.git
+cd vivatyssue
 ```
 
-Then create a virtual environement:
+Create a virtual environment and install in editable mode with the dev extras:
 
 ```bash
-conda env create -f environment.yml
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+python -m pip install -e ".[dev]"
 ```
 
-Then install tyssue:
-```
-python -m pip install .
-```
+All runtime dependencies are declared in `pyproject.toml`, so pip resolves them
+for you.
 
 
 

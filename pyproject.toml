@@ -8,6 +8,9 @@ authors = [
   { name = "Guillaume Gay", email = "guillaume@damcb.com" },
   { name = "all Tyssue contributors"}
 ]
+maintainers = [
+  { name = "Tasnif Rahman", email = "tasnif.rahman@gmail.com" },
+]
 description = "tyssue is a living tissues, cell level, modeling library"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,15 +23,47 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.10",
-  # "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering",
   # "Typing :: Typed",
 ]
-#version = "1.0.pre"
 license.file = "LICENSE"
 dynamic = ["version"]
 
+# Runtime requirements. These previously lived only in requirements.txt and
+# environment.yml, neither of which the build backend reads, so an install from
+# PyPI produced an unimportable package. Everything below is imported
+# unconditionally on the `import tyssue` path.
+dependencies = [
+  "numpy>=1.22",
+  "scipy>=1.8",
+  "pandas>=1.5",
+  "matplotlib>=3.5",
+  "networkx>=2.6",       # core/objects.py
+  "meshio>=5.0",         # io/meshes.py
+  "quantities>=0.13",    # dynamics/units.py
+  "scikit-image>=0.19",  # geometry/planar_geometry.py, reached by `import tyssue`
+  "tables>=3.7",         # pandas HDFStore backend, used by HistoryHdf5
+  "ipywidgets>=7.6",     # draw/plt_draw.py, utils/widgets.py
+]
+
 [project.optional-dependencies]
+# Interactive / WebGL rendering. Heavy, and not needed for headless simulation
+# or for the matplotlib drawing in tyssue.draw.plt_draw.
+viz = [
+  "ipyvolume",
+  "pythreejs",
+  "vispy",
+  "jupyter",
+  "notebook",
+]
+# tyssue.io.zarr degrades gracefully without these.
+zarr = [
+  "zarr",
+  "xarray",
+]
 test = [
   "nox",
   "pytest",
@@ -49,10 +84,11 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://githib.com/damcb/tyssue"
-"Bug Tracker" = "https://githib.com/damcb/tyssue/issues"
-Discussions = "https://githib.com/damcb/tyssue/discussions"
-Changelog = "https://githib.com/damcb/tyssue/releases"
+Homepage = "https://github.com/vivarium-collective/vivatyssue"
+"Bug Tracker" = "https://github.com/vivarium-collective/vivatyssue/issues"
+Discussions = "https://github.com/vivarium-collective/vivatyssue/discussions"
+Changelog = "https://github.com/vivarium-collective/vivatyssue/releases"
+"Upstream project" = "https://github.com/DamCB/tyssue"
 
 [tool.hatch.version]
 source = "vcs"
@@ -64,32 +100,23 @@ version-file = "src/tyssue/_version.py"
 packages = ["src/tyssue"]
 
 [tool.hatch.build.targets.sdist]
-exclude = [".github"]
-
-[tool.cibuildwheel]
-test-command = "make test"
-build-verbosity = 1
-
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = [
-  "-ra",
-  "--showlocals",
-  "--strict-markers",
-  "--strict-config",
-#  "--docker-compose=tests/omero/docker-compose.yml",
- ]
-xfail_strict = true
-filterwarnings = [
-  "error",
-  "ignore::DeprecationWarning",
-  "default::ResourceWarning"
+# Explicit allow-list. An exclude-based sdist swept in the doc/notebooks
+# submodule (tyssue-demo, ~143 MB of gifs and pngs) plus doc/illus and
+# doc/examples, producing a 150 MB archive -- over PyPI's 100 MB file limit.
+# Docs and demo notebooks live in the repo, not in the release artifact.
+include = [
+  "/src/tyssue",
+  "/tests",
+  "/README.md",
+  "/INSTALL.md",
+  "/CONTRIBUTING.md",
+  "/LICENSE",
+  "/CITATION.cff",
+  "/changelog.md",
+  "/Makefile",
+  "/pytest.ini",
+  "/pyproject.toml",
 ]
-log_cli_level = "INFO"
-testpaths = [
-  "tests",
-]
-
 
 [tool.mypy]
 files = "src"

@@ -1,6 +1,11 @@
-import ipyvolume as ipv
 import numpy as np
 import pandas as pd
+import pytest
+
+# ipyvolume ships in the optional `viz` extra; skip rather than fail collection.
+ipv = pytest.importorskip(
+    "ipyvolume", reason="ipyvolume not installed (pip install 'tyssue[viz]')"
+)
 
 from tyssue import Epithelium, Sheet, SheetGeometry, config
 from tyssue.draw import highlight_cells

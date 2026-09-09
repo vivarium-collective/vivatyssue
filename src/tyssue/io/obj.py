@@ -1,20 +1,41 @@
+import logging
+import warnings
+
 import numpy as np
 import pandas as pd
 
 try:
     from vispy.io import write_mesh
 except ImportError:
-    print("You need vispy to use the .OBJ export")
-
-import logging
+    write_mesh = None
+    warnings.warn(
+        "You need vispy to use the .OBJ export. "
+        "Install it with: pip install 'tyssue[viz]'",
+        stacklevel=2,
+    )
 
 logger = logging.getLogger(name=__name__)
+
+
+def _write_mesh(*args, **kwargs):
+    """Call vispy's write_mesh, with an actionable error when vispy is absent.
+
+    Without this the missing import surfaced only at call time, as a bare
+    ``NameError: name 'write_mesh' is not defined``.
+    """
+    if write_mesh is None:
+        msg = (
+            "The .OBJ export needs vispy. "
+            "Install it with: pip install 'tyssue[viz]'"
+        )
+        raise RuntimeError(msg)
+    return write_mesh(*args, **kwargs)
 
 
 def save_triangulated(filename, eptm):
 
     vertices, faces = eptm.triangular_mesh(eptm.coords, False)
-    write_mesh(
+    _write_mesh(
         filename,
         vertices=vertices,
         faces=faces,
@@ -29,7 +50,7 @@ def save_junction_mesh(filename, eptm):
 
     vertices, faces, normals = eptm.vertex_mesh(eptm.coords, vertex_normals=True)
 
-    write_mesh(
+    _write_mesh(
         filename,
         vertices=vertices,
         faces=faces,
@@ -61,7 +82,7 @@ def save_splitted_cells(fname, sheet, epsilon=0.1):
     triangles = np.vstack(
         [sheet.edge_df["face"], np.arange(Ne) + Nf, np.arange(Ne) + Ne + Nf]
     ).T
-    write_mesh(
+    _write_mesh(
         fname,
         cell_faces.values,
         triangles,

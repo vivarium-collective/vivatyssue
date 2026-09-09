@@ -13,12 +13,10 @@ from ..utils.utils import get_sub_eptm, spec_updater
 try:
     import ipyvolume as ipv
 except ImportError:
-    print(
-        """
-This module needs ipyvolume to work.
-You can install it with:
-$ conda install -c conda-forge ipyvolume
-"""
+    warnings.warn(
+        "This module needs ipyvolume to work. "
+        "Install it with: pip install 'tyssue[viz]'",
+        stacklevel=2,
     )
 
 

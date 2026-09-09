@@ -1,8 +1,4 @@
-name: Gen sdist and upload to PyPI
-
-env:
-  CIBW_TEST_REQUIRES: pytest
-  CIBW_TEST_COMMAND: "pytest tests"
+name: Build and upload to PyPI
 
 on:
   workflow_dispatch:
@@ -15,40 +11,29 @@ on:
       - published
 
 jobs:
-  # build_wheels:
-  #   name: Build wheels on ${{ matrix.os }}
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     matrix:
-  #       # macos-13 is an intel runner, macos-14 is apple silicon
-  #       os: [ubuntu-22.04, windows-2022, macos-13, macos-14]
-
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - name: Build wheels
-  #       uses: pypa/cibuildwheel@v2.16.5
-
-  #     - uses: actions/upload-artifact@v4
-  #       with:
-  #         name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
-  #         path: ./wheelhouse/*.whl
-  build_sdist:
-    name: Build source distribution
+  build_dist:
+    name: Build sdist and wheel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # hatch-vcs derives the version from tags; a shallow clone has none.
+          fetch-depth: 0
 
-      - name: Build sdist
-        run: pipx run build --sdist
+      - name: Build sdist and wheel
+        # tyssue is pure Python, so a single py3-none-any wheel covers every
+        # platform. Publishing it spares users a source build of a 17 MB sdist.
+        run: pipx run build
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cibw-sdist
-          path: dist/*.tar.gz
+          name: dist
+          path: |
+            dist/*.tar.gz
+            dist/*.whl
 
   upload_pypi:
-    needs: [build_sdist]
+    needs: [build_dist]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -57,9 +42,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          # unpacks all CIBW artifacts into dist/
-          pattern: cibw-*
+          name: dist
           path: dist
-          merge-multiple: true
 
       - uses: pypa/gh-action-pypi-publish@release/v1

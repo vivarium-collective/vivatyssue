@@ -1,7 +1,11 @@
 import tempfile
 
 import numpy as np
-import zarr as zr
+import pytest
+
+# zarr/xarray ship in the optional `zarr` extra; skip rather than fail collection.
+zr = pytest.importorskip("zarr", reason="zarr not installed (pip install 'tyssue[zarr]')")
+pytest.importorskip("xarray", reason="xarray not installed (pip install 'tyssue[zarr]')")
 
 from tyssue import Sheet
 from tyssue.generation import three_faces_sheet
