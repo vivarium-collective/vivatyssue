@@ -13,6 +13,7 @@ With the agreement of the original authors, tyssue is developed here by the
 the upstream repository and does not include the changes listed under
 [Upcoming release](#upcoming-release).
 
+
 ![A nice banner](doc/illus/banner.png)
 
 <hr/>
@@ -263,7 +264,7 @@ tyssue is tested on Linux, macOS and Windows with Python 3.10 to 3.13.
 
 ## Install
 
-tyssue is a pure python package, installed from PyPI:
+tyssue no longer depends on CGAL and is a pure python package, installed from PyPI:
 
 ```bash
 python -m pip install --upgrade tyssue
