@@ -24,8 +24,8 @@ class SheetGeometry(PlanarGeometry):
 
         """
         cls.update_dcoords(sheet)
-        cls.update_ucoords(sheet)
         cls.update_length(sheet)
+        cls.update_ucoords(sheet)  # needs the current lengths
         cls.update_centroid(sheet)
         cls.update_height(sheet)
         cls.update_normals(sheet)
@@ -124,12 +124,8 @@ class SheetGeometry(PlanarGeometry):
 
         sheet.vert_df["height"] = sheet.vert_df["rho"] - sheet.vert_df["basal_shift"]
 
-        # Face-level mean of the source vertices' height/rho. Equivalent to
-        #     upcast_srce(...).groupby(face).mean()
-        # but done with bincount: the groupby builds an Ne x 2 intermediate frame
-        # and dominated update_height (0.717 ms of 0.761 ms on a 704-face crypt),
-        # which matters because update_height is per-step for every backend.
-        # Faces carrying no edge get NaN, exactly as the groupby's reindex did.
+        # face mean of the source vertices' height and rho (NaN for faces
+        # without edges), with bincount rather than a slower groupby
         srce_pos = sheet.vert_df.index.get_indexer(sheet.edge_df["srce"])
         face_pos = sheet.face_df.index.get_indexer(sheet.edge_df["face"])
         counts = np.bincount(face_pos, minlength=sheet.face_df.shape[0])
@@ -141,36 +137,6 @@ class SheetGeometry(PlanarGeometry):
                     minlength=sheet.face_df.shape[0],
                 )
                 sheet.face_df[col] = np.where(counts > 0, totals / counts, np.nan)
-
-    @staticmethod
-    def update_boundary_index(sheet):
-        """Updates the vert_df, edge_df and face_df dataframes with a 'boundary'
-        column that takes values 0 and 1, with 1 denoting that a vertex, edge or
-        face lies on the tissue boundary, and 0 when it does not.
-
-        """
-        # Reset boundary flags
-        sheet.vert_df['boundary'] = 0
-        sheet.edge_df['boundary'] = 0
-        sheet.face_df['boundary'] = 0
-
-        # Update opposite edges. Imported here rather than at module level:
-        # core.objects imports this module, so a top-level import would cycle.
-        from ..core.sheet import get_opposite
-
-        sheet.edge_df["opposite"] = get_opposite(sheet.edge_df)
-
-        # Identify boundary edges
-        boundary_edges = sheet.edge_df['opposite'] == -1
-        sheet.edge_df.loc[boundary_edges, 'boundary'] = 1
-
-        # Set boundary vertices
-        boundary_verts = sheet.edge_df.loc[boundary_edges, 'trgt']
-        sheet.vert_df.loc[boundary_verts.unique(), 'boundary'] = 1
-
-        # Set boundary faces
-        boundary_faces = sheet.edge_df.loc[boundary_edges, 'face']
-        sheet.face_df.loc[boundary_faces.dropna().unique().astype(int), 'boundary'] = 1
 
     @classmethod
     def reset_scafold(cls, sheet):

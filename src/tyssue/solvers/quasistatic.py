@@ -8,14 +8,13 @@ import numpy as np
 from scipy import optimize
 
 from .. import config
-from ..topology import auto_t1, auto_t3
+from ..topology import _t2_flag, auto_t1, auto_t2
 from .base import TopologyChangeError, set_pos
 
 log = logging.getLogger(__name__)
 
 MAX_ITER = 100
-# Smallest period the periodic box is allowed to shrink to, so that the
-# box degree of freedom can never cross its own lower boundary.
+# Smallest allowed period of a periodic box
 MIN_PERIOD = 1e-2
 
 
@@ -32,31 +31,34 @@ class QSSolver:
       by the model
     """
 
-    def __init__(self, with_t1=False, with_t3=False):
+    def __init__(self, with_t1=False, with_t2=False, with_t3=None):
         """Creates a quasistatic gradient descent solver with optional
-        type1 and type3 transition solving routines.
+        type1 and type2 transition solving routines.
 
         Parameters
         ----------
         with_t1 : bool, default False
             whether or not to solve type 1 transitions at each
             iteration.
-        with_t3 : bool, default False
-            whether or not to solve type 3 transitions
+        with_t2 : bool, default False
+            whether or not to solve type 2 transitions
             (i.e. elimnation of small triangular faces) at each
             iteration.
+        with_t3 : bool, optional
+            deprecated alias of `with_t2`
 
         Those corrections are applied in this order: first the type 1, then the
-        type 3
+        type 2
 
         """
+        with_t2 = _t2_flag(with_t2, with_t3)
         self.set_pos = set_pos
         if with_t1:
             self.set_pos = auto_t1(self.set_pos)
-        if with_t3:
-            self.set_pos = auto_t3(self.set_pos)
+        if with_t2:
+            self.set_pos = auto_t2(self.set_pos)
         self.restart = True
-        self.rearange = with_t1 or with_t3
+        self.rearange = with_t1 or with_t2
         self.res = {"success": False, "message": "Not Started"}
         self.num_restarts = 0
 
@@ -150,10 +152,8 @@ class QSSolver:
             for u in eptm.settings["boundaries"]:
                 size = eptm.specs["settings"]["boundaries"][u][1]
             pos0 = np.append(pos0, size)
-            # The last degree of freedom is the upper bound shared by every
-            # axis. Left unbounded, the line search can push it past the fixed
-            # lower bounds: the period turns negative, update_periodic_dcoords
-            # wraps the wrong way and the energy landscape becomes meaningless.
+            # the last degree of freedom is the box's upper bound, which must
+            # stay above the lower bounds
             lowest = max(
                 boundary[0] for boundary in eptm.settings["boundaries"].values()
             )

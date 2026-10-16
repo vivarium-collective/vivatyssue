@@ -91,6 +91,34 @@ def srce_trgt_connectivity(eptm):
     return st_connect
 
 
+def vertex_rank(eptm):
+    """Returns the rank of each vertex, i.e. its number of distinct neighbours,
+    as an array aligned with the rows of `eptm.vert_df`.
+
+    Cached on the epithelium until the topology changes.
+    """
+    # avoids a circular import
+    from ..geometry.planar_geometry import topology_signature
+
+    sig = topology_signature(eptm)
+    cached = getattr(eptm, "_rank", None)
+    if cached is not None and cached[0] == sig:
+        return cached[1]
+
+    nv = len(eptm.vert_df)
+    srce = eptm.vert_df.index.get_indexer(eptm.edge_df["srce"].to_numpy())
+    trgt = eptm.vert_df.index.get_indexer(eptm.edge_df["trgt"].to_numpy())
+    valid = (srce >= 0) & (trgt >= 0)
+    srce, trgt = srce[valid].astype(np.int64), trgt[valid].astype(np.int64)
+    pairs = np.unique(np.minimum(srce, trgt) * nv + np.maximum(srce, trgt))
+    lo, hi = pairs // nv, pairs % nv
+    # a self loop counts once
+    rank = np.bincount(lo, minlength=nv) + np.bincount(hi[hi != lo], minlength=nv)
+    rank.setflags(write=False)  # shared through the cache
+    eptm._rank = (sig, rank)
+    return rank
+
+
 def verts_in_face_connectivity(eptm):
     """Returns an array of shape (eptm.Nv, eptm.Nv) with
     C_ij = n, where n is the number of shared faces
