@@ -4,6 +4,8 @@ from ..utils.utils import to_nd
 
 
 class BaseGeometry:
+    #: True if calling `update_all` twice gives the same values
+    idempotent_update = True
 
     @staticmethod
     def update_all(sheet):

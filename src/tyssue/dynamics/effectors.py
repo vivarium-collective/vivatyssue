@@ -165,21 +165,16 @@ class PerimeterElasticity(AbstractEffector):
 
     @staticmethod
     def gradient(eptm):
-        # Compute gamma directly
         df = eptm.face_df
         gamma_ = df["perimeter_elasticity"] * df["is_alive"] * (df["perimeter"] - df["prefered_perimeter"])
 
-        # Upcast gamma
         gamma = eptm.upcast_face(gamma_)
 
-        # Convert gamma to node-level array
         gamma_nd = to_nd(gamma, len(eptm.coords))
 
-        # Compute gradient at edges
         grad_srce = -eptm.edge_df[eptm.ucoords].to_numpy() * gamma_nd
         grad_srce = pd.DataFrame(grad_srce, columns=["g" + u for u in eptm.coords])
 
-        # grad_trgt is just the negative
         grad_trgt = -grad_srce
         return grad_srce, grad_trgt
 
@@ -457,21 +452,16 @@ class FaceContractility(AbstractEffector):
 
     @staticmethod
     def gradient(eptm):
-        # Compute gamma directly
         df = eptm.face_df
         gamma_ = df["contractility"] * df["perimeter"] * df["is_alive"]
 
-        # Upcast gamma to edges
         gamma = eptm.upcast_face(gamma_)
 
-        # Convert gamma to node-level array
         gamma_nd = to_nd(gamma, len(eptm.coords))
 
-        # Compute gradient at edges
         grad_srce = -eptm.edge_df[eptm.ucoords].to_numpy() * gamma_nd
         grad_srce = pd.DataFrame(grad_srce, columns=["g" + u for u in eptm.coords])
 
-        # grad_trgt is just the negative
         grad_trgt = -grad_srce
         return grad_srce, grad_trgt
 
@@ -652,14 +642,11 @@ class BarrierElasticity(AbstractEffector):
 
     @staticmethod
     def gradient(eptm):
-        # Compute the vertex-level factor
         df = eptm.vert_df
         factor = df["barrier_elasticity"] * df["delta_rho"]
 
-        # Convert to node-level array
         factor_nd = to_nd(factor, 3)
 
-        # Compute gradient
         grad = height_grad(eptm) * factor_nd
         grad.columns = ["g" + c for c in eptm.coords]
 
@@ -701,9 +688,11 @@ class ActiveMigration(AbstractEffector):
 
     This is a non-conservative force that drives cells to migrate
     along a specified vector direction with constant magnitude.
+    The direction is read from the face columns ``m`` + coordinate
+    (``mx``, ``my``, and ``mz`` in 3D); it need not be normalized.
     """
 
-    dimensions = units.force  # or appropriate force units
+    dimensions = units.force
     magnitude = "migration_strength"
     label = "Active Migration"
     element = "face"
@@ -711,9 +700,9 @@ class ActiveMigration(AbstractEffector):
         "face": {
             "is_alive": 1,
             "migration_strength": 0.1,  # magnitude of migration force
-            "migration_dir_x": 1.0,  # x-component of migration direction
-            "migration_dir_y": 0.0,  # y-component of migration direction
-            "migration_dir_z": 0.0,  # z-component (if 3D)
+            "mx": 1.0,  # migration direction
+            "my": 0.0,
+            "mz": 0.0,
         }
     }
 
@@ -726,42 +715,30 @@ class ActiveMigration(AbstractEffector):
 
     @staticmethod
     def gradient(eptm):
-        """Compute migration forces on vertices.
-
-        Each cell exerts a constant force in its migration direction,
-        distributed among its vertices.
-        """
+        """Each cell exerts a force of magnitude `migration_strength` along its
+        migration direction, split equally between its vertices."""
         df = eptm.face_df
 
-        # Get migration force vector for each face
-        # Force magnitude scaled by migration_strength and is_alive
-        force_magnitude = df["migration_strength"] * df["is_alive"]
+        force_magnitude = df["migration_strength"] * df["is_alive"] / df["num_sides"]
 
-        # Build force vector (normalize direction first)
         migration_dirs = df[[f"m{c}" for c in eptm.coords]].to_numpy()
 
-        # Normalize direction vectors (per face)
         norms = np.linalg.norm(migration_dirs, axis=1, keepdims=True)
         norms = np.where(norms > 0, norms, 1.0)  # avoid division by zero
         migration_dirs_normalized = migration_dirs / norms
 
-        # Scale by force magnitude
         force_vectors = migration_dirs_normalized * force_magnitude.to_numpy()[:, np.newaxis]
 
-        # Upcast from face to edge level
         force_per_coord = {
             coord: eptm.upcast_face(force_vectors[:, i])
             for i, coord in enumerate(eptm.coords)
         }
 
-        # Convert to node-level arrays
         force_nd = np.column_stack([
             to_nd(force_per_coord[coord], len(eptm.coords))
             for coord in eptm.coords
         ])
 
-        # Distribute force equally to source vertices
-        # (could also distribute based on edge length or other schemes)
         grad_srce = pd.DataFrame(force_nd, columns=["g" + u for u in eptm.coords])
 
         return -grad_srce, None
